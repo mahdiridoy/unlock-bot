@@ -19,6 +19,7 @@ Deploy: set the start command to `python app.py` on your host.
 import os
 import logging
 import threading
+import asyncio
 
 from flask import Flask, request, jsonify
 
@@ -83,6 +84,12 @@ def client_ad_ping():
 # ─────────────────────────── Bot thread ──────────────────────────────
 
 def run_bot():
+    # Python 3.10+ (and especially 3.12+/3.14) no longer auto-creates an
+    # event loop for non-main threads, so we must create and set one
+    # explicitly before python-telegram-bot's run_polling() can use it.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     application = build_application()
     logger.info("Bot starting (polling mode, background thread)...")
     # stop_signals=None: signal handlers only work in the main thread, and
