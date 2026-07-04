@@ -18,7 +18,7 @@ FACEBOOK_LINK_2 = "https://www.facebook.com/share/1ESSAeXnvQ/"
 YOUTUBE_LINK = "https://youtube.com/@nm-djridoy?si=XrYD0EJz1o3aKa7b"
 
 # ── How many ads must be watched before unlocking step 2 ────────────
-ADS_REQUIRED = 5
+ADS_REQUIRED = 10
 
 # ── Monetag SDK zone (Telegram Mini App ad format) ───────────────────
 MONETAG_ZONE_ID = "11237862"
