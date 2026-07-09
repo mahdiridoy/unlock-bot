@@ -110,9 +110,14 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     db.mark_step2_claimed(user_id)
     await query.edit_message_text(
-        "🎉 Verified! Here is your unlocked link:\n\n"
-        f"{config.FINAL_UNLOCK_LINK}\n\n"
-        "Thanks for supporting us! ❤️"
+        "🎉 Verified! Here is your unlocked content:\n\n"
+        f"📺 *Option 1: M3U Playlist Link*\n{config.FINAL_UNLOCK_LINK}\n\n"
+        f"📡 *Option 2: Xtream Codes Login*\n"
+        f"Server: `{config.XTREAM_SERVER}`\n"
+        f"Username: `{config.XTREAM_USERNAME}`\n"
+        f"Password: `{config.XTREAM_PASSWORD}`\n\n"
+        "Thanks for supporting us! ❤️",
+        parse_mode=ParseMode.MARKDOWN,
     )
 
 
@@ -126,7 +131,6 @@ async def check_telegram_membership(context: ContextTypes.DEFAULT_TYPE, user_id:
         return member.status not in ("left", "kicked")
     except Exception as e:
         logger.warning(f"Membership check failed for {user_id}: {e}")
-        # If the bot isn't admin yet or chat_id is wrong, this will always fail.
         return False
 
 
