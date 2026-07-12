@@ -112,10 +112,6 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.edit_message_text(
         "🎉 Verified! Here is your unlocked content:\n\n"
         f"📺 *Option 1: M3U Playlist Link*\n{config.FINAL_UNLOCK_LINK}\n\n"
-        f"📡 *Option 2: Xtream Codes Login*\n"
-        f"Server: `{config.XTREAM_SERVER}`\n"
-        f"Username: `{config.XTREAM_USERNAME}`\n"
-        f"Password: `{config.XTREAM_PASSWORD}`\n\n"
         "Thanks for supporting us! ❤️",
         parse_mode=ParseMode.MARKDOWN,
     )
