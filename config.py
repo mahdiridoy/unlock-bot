@@ -24,11 +24,6 @@ ADS_WEBAPP_URL = os.environ.get("ADS_WEBAPP_URL", "https://PUT_YOUR_HOSTED_ADS_H
 # ── The final reward link unlocked after both steps ──────────────────
 FINAL_UNLOCK_LINK = "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u"
 
-# ── Xtream Codes login (2nd unlock option) ────────────────────────────
-XTREAM_SERVER = os.environ.get("XTREAM_SERVER", "http://premiumtvs.space:80")
-XTREAM_USERNAME = os.environ.get("XTREAM_USERNAME", "NammudeSydney")
-XTREAM_PASSWORD = os.environ.get("XTREAM_PASSWORD", "61403363861")
-
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 
