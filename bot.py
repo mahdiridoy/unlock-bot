@@ -143,6 +143,12 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
+    """Logs any exception raised inside a handler instead of letting it
+    disappear silently (which looks like the bot 'doing nothing')."""
+    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+
+
 def build_application():
     """Builds and returns the PTB Application with all handlers registered,
     without starting polling. Used both by main() below (standalone run)
@@ -153,6 +159,7 @@ def build_application():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CallbackQueryHandler(check_ads_callback, pattern="^check_ads$"))
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
+    application.add_error_handler(error_handler)
     return application
 
 

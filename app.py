@@ -20,6 +20,7 @@ import os
 import logging
 import threading
 import asyncio
+import time
 
 from flask import Flask, request, jsonify
 
@@ -35,11 +36,17 @@ logger = logging.getLogger(__name__)
 flask_app = Flask(__name__)
 db.init_db()
 
+bot_thread = None  # set once the bot thread starts, checked by /health below
+
 
 @flask_app.route("/health", methods=["GET"])
 def health():
-    """Hit by your free uptime monitor to keep the service awake."""
-    return jsonify({"status": "healthy"})
+    """Hit by your free uptime monitor to keep the service awake.
+    Now also reports whether the bot thread is actually alive, so a crash
+    shows up as a real alert instead of hiding behind a 200 OK forever."""
+    bot_alive = bot_thread is not None and bot_thread.is_alive()
+    status_code = 200 if bot_alive else 503
+    return jsonify({"status": "healthy" if bot_alive else "bot_down", "bot_thread_alive": bot_alive}), status_code
 
 
 @flask_app.route("/monetag_postback", methods=["GET", "POST"])
@@ -87,14 +94,22 @@ def run_bot():
     # Python 3.10+ (and especially 3.12+/3.14) no longer auto-creates an
     # event loop for non-main threads, so we must create and set one
     # explicitly before python-telegram-bot's run_polling() can use it.
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    while True:
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-    application = build_application()
-    logger.info("Bot starting (polling mode, background thread)...")
-    # stop_signals=None: signal handlers only work in the main thread, and
-    # this runs in a background thread, so we disable them here.
-    application.run_polling(stop_signals=None)
+            application = build_application()
+            logger.info("Bot starting (polling mode, background thread)...")
+            # stop_signals=None: signal handlers only work in the main thread,
+            # and this runs in a background thread, so we disable them here.
+            application.run_polling(stop_signals=None)
+        except Exception:
+            # Without this, an unhandled exception here kills the thread
+            # silently — /health keeps returning "healthy" forever while
+            # the bot itself stops responding to every button and command.
+            logger.exception("Bot polling loop crashed, restarting in 5s...")
+            time.sleep(5)
 
 
 if __name__ == "__main__":
