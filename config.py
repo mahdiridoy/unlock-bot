@@ -30,7 +30,7 @@ ADS_WEBAPP_URL = os.environ.get("ADS_WEBAPP_URL", "https://PUT_YOUR_HOSTED_ADS_H
 # ── The final reward link unlocked after both steps ──────────────────
 FINAL_UNLOCK_LINK = "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u"
 SPECIAL_M3U_NAME = "Special M3U Link by Ridoy"
-SPECIAL_M3U_URL = "https://mahdiridoy.github.io/Tv/mahdi_iptv.m3u8"
+SPECIAL_APP_URL = "https://github.com/mahdiridoy/APK-Pulse-TV/releases/download/v1.0.0.20/pulsestreamV1.0.0.20.apk"
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 
