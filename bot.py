@@ -111,9 +111,10 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
     db.mark_step2_claimed(user_id)
     await query.edit_message_text(
         "🎉 Verified! Here are your unlocked links:\n\n"
-        f"{config.FINAL_UNLOCK_LINK}\n\n"
         f"📺 {config.SPECIAL_M3U_NAME}\n"
         f"{config.SPECIAL_M3U_URL}\n\n"
+        f"📱 Pulse TV App\n"
+        f"{config.SPECIAL_APP_URL}\n\n"
         "Thanks for supporting us! ❤️"
     )
 
