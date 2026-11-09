@@ -119,7 +119,7 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
         ("MahSuratStream TV", "mahdiridoy/MahSuratStreamTV", config.SPECIAL_APP_URL_TV),
         ("MahSuratStream", "mahdiridoy/MahSuratStream", config.SPECIAL_APP_URL_STREAM),
     ]
-    lines = ["🎉 Verified! Here are your unlocked links:\n", f"📺 {config.SPECIAL_M3U_NAME}\n{config.SPECIAL_M3U_URL}\n"]
+    lines = ["🎉 Verified! Here are your unlocked links:\n"]
     for label, repo, fallback in repos:
         try:
             url, asset_name, tag = await asyncio.get_running_loop().run_in_executor(
