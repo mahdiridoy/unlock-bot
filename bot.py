@@ -1,4 +1,7 @@
+import json
 import logging
+import urllib.request
+import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import ParseMode
@@ -109,14 +112,31 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     db.mark_step2_claimed(user_id)
-    await query.edit_message_text(
-        "🎉 Verified! Here are your unlocked links:\n\n"
-        f"📺 {config.SPECIAL_M3U_NAME}\n"
-        f"{config.SPECIAL_M3U_URL}\n\n"
-        f"📱 Pulse TV App\n"
-        f"{config.SPECIAL_APP_URL}\n\n"
-        "Thanks for supporting us! ❤️"
-    )
+
+    # Fetch the actual latest APK asset from each GitHub release so the user
+    # gets a direct download link that tracks new releases automatically.
+    repos = [
+        ("MahSuratStream TV", "mahdiridoy/MahSuratStreamTV", config.SPECIAL_APP_URL_TV),
+        ("MahSuratStream", "mahdiridoy/MahSuratStream", config.SPECIAL_APP_URL_STREAM),
+    ]
+    lines = ["🎉 Verified! Here are your unlocked links:\n", f"📺 {config.SPECIAL_M3U_NAME}\n{config.SPECIAL_M3U_URL}\n"]
+    for label, repo, fallback in repos:
+        try:
+            url, asset_name, tag = await asyncio.get_running_loop().run_in_executor(
+                None, _latest_apk, repo
+            )
+            ver = f" ({tag})" if tag else ""
+            if url:
+                extra = f" — {asset_name}" if asset_name else ""
+                lines.append(f"📱 {label}{ver}\n{url}{extra}\n")
+            else:
+                lines.append(f"📱 {label}{ver}\n{fallback}\n")
+        except Exception as e:
+            logger.warning(f"latest apk fetch failed for {repo}: {e}")
+            lines.append(f"📱 {label}\n{fallback}\n")
+
+    lines.append("Tap a link to download the latest APK and remove the previous one.\nThanks for supporting us! ❤️")
+    await query.edit_message_text("\n".join(lines))
 
 
 async def check_telegram_membership(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
@@ -147,6 +167,26 @@ async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
     """Logs any exception raised inside a handler instead of letting it
     disappear silently (which looks like the bot 'doing nothing')."""
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+
+
+def _latest_apk(repo: str):
+    """Return (download_url, asset_name, tag_name) for the newest .apk asset
+    of the given GitHub repo's latest release. Falls back to the release page
+    URL if no apk asset is found."""
+    api = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urllib.request.Request(api, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "mahsurat-unlock-bot",
+    })
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.load(resp)
+    tag = data.get("tag_name")
+    page = data.get("html_url") or f"https://github.com/{repo}/releases/latest"
+    for asset in data.get("assets", []):
+        name = asset.get("name", "")
+        if name.lower().endswith(".apk"):
+            return asset.get("browser_download_url", page), name, tag
+    return None, None, tag
 
 
 def build_application():

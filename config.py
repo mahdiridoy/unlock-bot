@@ -18,10 +18,10 @@ FACEBOOK_LINK_2 = "https://www.facebook.com/share/1ESSAeXnvQ/"
 YOUTUBE_LINK = "https://youtube.com/@nm-djridoy?si=XrYD0EJz1o3aKa7b"
 
 # ── How many ads must be watched before unlocking step 2 ────────────
-ADS_REQUIRED = 5
+ADS_REQUIRED = 2
 
 # ── Monetag SDK zone (Telegram Mini App ad format) ───────────────────
-MONETAG_ZONE_ID = "11237862"
+MONETAG_ZONE_ID = "12223543"
 
 # ── URL where ads.html is hosted (must be HTTPS — GitHub Pages works) ─
 # Example: "https://yourusername.github.io/unlock-bot-ads/ads.html"
@@ -31,7 +31,8 @@ ADS_WEBAPP_URL = os.environ.get("ADS_WEBAPP_URL", "https://PUT_YOUR_HOSTED_ADS_H
 FINAL_UNLOCK_LINK = "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u"
 SPECIAL_M3U_NAME = "Special M3U Link by Ridoy"
 SPECIAL_M3U_URL = os.environ.get("SPECIAL_M3U_URL", "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u")
-SPECIAL_APP_URL = "https://github.com/mahdiridoy/APK-Pulse-TV/releases/download/v1.0.0.20/pulsestreamV1.0.0.20.apk"
+SPECIAL_APP_URL_TV = "https://github.com/mahdiridoy/MahSuratStreamTV/releases/latest"
+SPECIAL_APP_URL_STREAM = "https://github.com/mahdiridoy/MahSuratStream/releases/latest"
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 

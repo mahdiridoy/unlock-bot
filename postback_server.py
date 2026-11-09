@@ -34,7 +34,7 @@ def monetag_postback():
     if secret != config.POSTBACK_SECRET:
         return jsonify({"status": "error", "message": "invalid secret"}), 403
 
-    # ymid is the Telegram user id we passed into show_11237862({ymid: ...})
+    # ymid is the Telegram user id we passed into show_12223543({ymid: ...})
     user_id = args.get("ymid") or args.get("user_id")
     if not user_id:
         return jsonify({"status": "error", "message": "missing ymid"}), 400

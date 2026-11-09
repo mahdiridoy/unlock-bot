@@ -46,7 +46,7 @@ Required so the bot can verify real membership.
 
 ## Part D — Wire up Monetag's postback (makes ad-watching REAL)
 
-In your Monetag dashboard, under the SDK zone (11237862) → Postback URL, set:
+In your Monetag dashboard, under the SDK zone (12223543) → Postback URL, set:
 ```
 https://unlock-bot-xxxx.onrender.com/monetag_postback?ymid={ymid}&event={event}&zone_id={zone_id}&secret=YOUR_POSTBACK_SECRET
 ```
@@ -68,7 +68,7 @@ Render's free tier sleeps after 15 minutes with no HTTP traffic — which would 
 ## How the flow works end to end
 
 1. `/start` → bot shows "Open Ads Page" (opens `ads.html` as a Telegram Mini App, from GitHub Pages).
-2. User taps "Watch Ad" 5 times inside the Mini App. Each real completion triggers Monetag's server postback → hits your Render app → increments their count in the DB.
+2. User taps "Watch Ad" 2 times inside the Mini App. Each real completion triggers Monetag's server postback → hits your Render app → increments their count in the DB.
 3. User returns to the chat, taps "Check my progress".
 4. At 5/5 → bot shows Step 2 (Facebook, YouTube, Telegram buttons + Unlock).
 5. Telegram join is verified for real via `getChatMember`. Facebook/YouTube stay honor-system — no public API can verify these.
