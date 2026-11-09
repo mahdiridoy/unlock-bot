@@ -19,13 +19,16 @@ def init_db():
             step2_claimed INTEGER DEFAULT 0,
             created_at INTEGER,
             updated_at INTEGER,
-            last_ad_at INTEGER DEFAULT 0
+            last_ad_at INTEGER DEFAULT 0,
+            last_postback_at INTEGER DEFAULT 0,
+            last_client_at INTEGER DEFAULT 0
         )
     """)
     # Upgrade older databases that don't have last_ad_at yet.
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
-    if "last_ad_at" not in cols:
-        conn.execute("ALTER TABLE users ADD COLUMN last_ad_at INTEGER DEFAULT 0")
+    for col in ("last_ad_at", "last_postback_at", "last_client_at"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -47,18 +50,22 @@ def get_or_create_user(user_id: int, username: str = None):
     return dict(row)
 
 
-def register_ad(user_id: int, max_ads: int, min_interval: int = 0):
-    """Counts ONE verified ad for the user, atomically.
-    Never goes above max_ads, and ignores a second postback that arrives
-    within min_interval seconds of the previous counted one (duplicates).
+def register_ad(user_id: int, max_ads: int, min_interval: int = 0,
+                source: str = "postback", dedupe_window: int = 0):
+    """Counts ONE ad atomically. source is "postback" (Monetag) or "client".
+    - never above max_ads
+    - same source: at least min_interval seconds apart
+    - other source counted within dedupe_window seconds => this is the same ad, skip
     Returns (counted: bool, new_count: int)."""
+    mine, other = ("last_postback_at", "last_client_at") if source == "postback" else ("last_client_at", "last_postback_at")
     get_or_create_user(user_id)
     now = int(time.time())
     conn = get_conn()
     cur = conn.execute(
-        "UPDATE users SET ads_watched = ads_watched + 1, last_ad_at = ?, updated_at = ? "
-        "WHERE user_id = ? AND ads_watched < ? AND (? - COALESCE(last_ad_at, 0)) >= ?",
-        (now, now, user_id, max_ads, now, min_interval),
+        f"UPDATE users SET ads_watched = ads_watched + 1, last_ad_at = ?, {mine} = ?, updated_at = ? "
+        f"WHERE user_id = ? AND ads_watched < ? "
+        f"AND (? - COALESCE({mine}, 0)) >= ? AND (? - COALESCE({other}, 0)) >= ?",
+        (now, now, now, user_id, max_ads, now, min_interval, now, dedupe_window),
     )
     conn.commit()
     counted = cur.rowcount == 1

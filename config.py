@@ -36,11 +36,18 @@ SPECIAL_M3U_URL = os.environ.get("SPECIAL_M3U_URL", "https://mahdiridoy.github.i
 SPECIAL_APP_URL_TV = "https://github.com/mahdiridoy/MahSuratStreamTV/releases/latest"
 SPECIAL_APP_URL_STREAM = "https://github.com/mahdiridoy/MahSuratStream/releases/latest"
 # ── Ad counting rules ────────────────────────────────────────────────
-# Only these Monetag postback events count as a watched ad. "click" is NOT
-# counted, so clicks can never be used to finish Step 1.
-COUNTED_EVENTS = {"impression"}
-# Ignore a second postback arriving this soon after a counted one (duplicates).
+# Monetag postback events that are NOT counted (clicks never finish Step 1).
+# Any other event name (impression, reward, ...) counts as a watched ad.
+IGNORED_EVENTS = {"click"}
+# Min seconds between two counted ads from the same source (blocks duplicates).
 ADS_MIN_INTERVAL_SECONDS = 5
+
+# Fallback when Monetag's postback is missing/late: ads.html reports the finished
+# ad with Telegram's SIGNED initData, which the server verifies (can't be faked
+# for another user). Postback + client report for the same ad count only once.
+CLIENT_FALLBACK_ENABLED = True
+CLIENT_MIN_INTERVAL_SECONDS = 15
+DEDUPE_WINDOW_SECONDS = 20
 
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")

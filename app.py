@@ -21,6 +21,10 @@ import logging
 import threading
 import asyncio
 import time
+import hmac
+import hashlib
+import json
+from urllib.parse import parse_qsl
 
 from flask import Flask, request, jsonify
 
@@ -49,6 +53,26 @@ def health():
     return jsonify({"status": "healthy" if bot_alive else "bot_down", "bot_thread_alive": bot_alive}), status_code
 
 
+def verify_init_data(init_data: str, max_age: int = 86400):
+    """Validates Telegram WebApp initData (HMAC with the bot token).
+    Returns the Telegram user id, or None if invalid/expired."""
+    try:
+        pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+        got_hash = pairs.pop("hash", None)
+        if not got_hash:
+            return None
+        check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+        secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
+        calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calc, got_hash):
+            return None
+        if time.time() - int(pairs.get("auth_date", "0")) > max_age:
+            return None
+        return int(json.loads(pairs["user"])["id"])
+    except Exception:
+        return None
+
+
 @flask_app.after_request
 def add_cors(resp):
     # ads.html is hosted on GitHub Pages (another origin) and calls these endpoints.
@@ -68,8 +92,10 @@ def monetag_postback():
     This is the ONLY place an ad is counted. Only events listed in
     config.COUNTED_EVENTS (impression) count; clicks are ignored."""
     args = request.values
+    logger.info(f"[postback] incoming: {dict(args)}")
 
     if args.get("secret") != config.POSTBACK_SECRET:
+        logger.warning("[postback] rejected: wrong secret")
         return jsonify({"status": "error", "message": "invalid secret"}), 403
 
     user_id = args.get("ymid") or args.get("user_id")
@@ -81,13 +107,14 @@ def monetag_postback():
         return jsonify({"status": "error", "message": "ymid must be numeric"}), 400
 
     event = (args.get("event") or "impression").strip().lower()
-    if event not in config.COUNTED_EVENTS:
+    if event in config.IGNORED_EVENTS:
         row = db.get_or_create_user(user_id)
         return jsonify({"status": "ignored", "reason": f"event '{event}' not counted",
                         "user_id": user_id, "ads_watched": row["ads_watched"]})
 
     counted, new_count = db.register_ad(
-        user_id, config.ADS_REQUIRED, config.ADS_MIN_INTERVAL_SECONDS
+        user_id, config.ADS_REQUIRED, config.ADS_MIN_INTERVAL_SECONDS,
+        source="postback", dedupe_window=config.DEDUPE_WINDOW_SECONDS,
     )
     logger.info(f"[postback] user {user_id} event={event} counted={counted} total={new_count}")
     return jsonify({"status": "ok", "counted": counted, "user_id": user_id, "ads_watched": new_count})
@@ -95,13 +122,23 @@ def monetag_postback():
 
 @flask_app.route("/client_ad_ping", methods=["POST", "OPTIONS"])
 def client_ad_ping():
-    """Client-side notice from ads.html. LOG ONLY - it no longer changes the
-    count. Before, it incremented the same counter as the Monetag postback,
-    so one real ad was counted twice (and anyone could fake it)."""
+    """ads.html reports a finished ad, with Telegram's signed initData.
+    Counted only if the signature is valid (so it is for a real Telegram user,
+    not a made-up id), and never twice for the same ad as the Monetag postback."""
     if request.method == "OPTIONS":
         return ("", 204)
-    logger.info(f"[client ping] user {request.values.get('user_id')} finished an ad locally (unverified, not counted)")
-    return jsonify({"status": "logged"})
+    if not config.CLIENT_FALLBACK_ENABLED:
+        return jsonify({"status": "disabled"})
+    uid = verify_init_data(request.values.get("init_data", ""))
+    if uid is None:
+        logger.warning("[client ping] rejected: invalid initData")
+        return jsonify({"status": "error", "message": "invalid init_data"}), 403
+    counted, total = db.register_ad(
+        uid, config.ADS_REQUIRED, config.CLIENT_MIN_INTERVAL_SECONDS,
+        source="client", dedupe_window=config.DEDUPE_WINDOW_SECONDS,
+    )
+    logger.info(f"[client ping] user {uid} counted={counted} total={total}")
+    return jsonify({"status": "ok", "counted": counted, "ads_watched": total})
 
 
 @flask_app.route("/ad_status", methods=["GET", "OPTIONS"])
