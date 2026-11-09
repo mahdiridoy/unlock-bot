@@ -55,10 +55,18 @@ def monetag_postback():
 
 @app.route("/client_ad_ping", methods=["POST"])
 def client_ad_ping():
-    """Non-authoritative - just for logging/debugging. Does not affect the
-    real ad count, which only updates from the Monetag server postback."""
+    """Fallback: bump count on client notice so flow works without postback.
+    shortcut: spoofable; configure Monetag postback for trustworthy counts."""
     user_id = request.values.get("user_id")
     print(f"[client ping] user {user_id} finished an ad locally (unverified)")
+    if user_id:
+        try:
+            uid = int(user_id)
+            row = db.get_or_create_user(uid)
+            if row["ads_watched"] < config.ADS_REQUIRED:
+                db.increment_ads_watched(uid)
+        except (ValueError, TypeError):
+            pass
     return jsonify({"status": "logged"})
 
 

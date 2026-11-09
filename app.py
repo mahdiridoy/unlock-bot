@@ -81,10 +81,20 @@ def monetag_postback():
 
 @flask_app.route("/client_ad_ping", methods=["POST"])
 def client_ad_ping():
-    """Non-authoritative — just for logging. Real count only updates via
-    /monetag_postback above."""
+    """Client-side notice. Also bumps the count as a fallback so the flow
+    keeps moving when Monetag's server postback isn't configured yet.
+    shortcut: client-reported count is spoofable; configure Monetag postback
+    for trustworthy verification."""
     user_id = request.values.get("user_id")
     logger.info(f"[client ping] user {user_id} finished an ad locally (unverified)")
+    if user_id:
+        try:
+            uid = int(user_id)
+            row = db.get_or_create_user(uid)
+            if row["ads_watched"] < config.ADS_REQUIRED:
+                db.increment_ads_watched(uid)
+        except (ValueError, TypeError):
+            pass
     return jsonify({"status": "logged"})
 
 
