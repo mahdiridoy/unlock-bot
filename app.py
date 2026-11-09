@@ -49,53 +49,72 @@ def health():
     return jsonify({"status": "healthy" if bot_alive else "bot_down", "bot_thread_alive": bot_alive}), status_code
 
 
+@flask_app.after_request
+def add_cors(resp):
+    # ads.html is hosted on GitHub Pages (another origin) and calls these endpoints.
+    if request.path in ("/client_ad_ping", "/ad_status"):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
+
+
 @flask_app.route("/monetag_postback", methods=["GET", "POST"])
 def monetag_postback():
     """AUTHORITATIVE server-to-server callback from Monetag confirming a
-    real ad completion. Configure this URL in your Monetag SDK zone settings:
+    real ad event. Configure this URL in your Monetag SDK zone settings:
     https://YOUR_RENDER_URL/monetag_postback?ymid={ymid}&event={event}&zone_id={zone_id}&secret=YOUR_POSTBACK_SECRET
-    """
+
+    This is the ONLY place an ad is counted. Only events listed in
+    config.COUNTED_EVENTS (impression) count; clicks are ignored."""
     args = request.values
 
-    secret = args.get("secret")
-    if secret != config.POSTBACK_SECRET:
+    if args.get("secret") != config.POSTBACK_SECRET:
         return jsonify({"status": "error", "message": "invalid secret"}), 403
 
     user_id = args.get("ymid") or args.get("user_id")
     if not user_id:
         return jsonify({"status": "error", "message": "missing ymid"}), 400
-
     try:
         user_id = int(user_id)
     except ValueError:
         return jsonify({"status": "error", "message": "ymid must be numeric"}), 400
 
-    row = db.get_or_create_user(user_id)
-    if row["ads_watched"] < config.ADS_REQUIRED:
-        new_count = db.increment_ads_watched(user_id)
-    else:
-        new_count = row["ads_watched"]
+    event = (args.get("event") or "impression").strip().lower()
+    if event not in config.COUNTED_EVENTS:
+        row = db.get_or_create_user(user_id)
+        return jsonify({"status": "ignored", "reason": f"event '{event}' not counted",
+                        "user_id": user_id, "ads_watched": row["ads_watched"]})
 
-    return jsonify({"status": "ok", "user_id": user_id, "ads_watched": new_count})
+    counted, new_count = db.register_ad(
+        user_id, config.ADS_REQUIRED, config.ADS_MIN_INTERVAL_SECONDS
+    )
+    logger.info(f"[postback] user {user_id} event={event} counted={counted} total={new_count}")
+    return jsonify({"status": "ok", "counted": counted, "user_id": user_id, "ads_watched": new_count})
 
 
-@flask_app.route("/client_ad_ping", methods=["POST"])
+@flask_app.route("/client_ad_ping", methods=["POST", "OPTIONS"])
 def client_ad_ping():
-    """Client-side notice. Also bumps the count as a fallback so the flow
-    keeps moving when Monetag's server postback isn't configured yet.
-    shortcut: client-reported count is spoofable; configure Monetag postback
-    for trustworthy verification."""
-    user_id = request.values.get("user_id")
-    logger.info(f"[client ping] user {user_id} finished an ad locally (unverified)")
-    if user_id:
-        try:
-            uid = int(user_id)
-            row = db.get_or_create_user(uid)
-            if row["ads_watched"] < config.ADS_REQUIRED:
-                db.increment_ads_watched(uid)
-        except (ValueError, TypeError):
-            pass
+    """Client-side notice from ads.html. LOG ONLY - it no longer changes the
+    count. Before, it incremented the same counter as the Monetag postback,
+    so one real ad was counted twice (and anyone could fake it)."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    logger.info(f"[client ping] user {request.values.get('user_id')} finished an ad locally (unverified, not counted)")
     return jsonify({"status": "logged"})
+
+
+@flask_app.route("/ad_status", methods=["GET", "OPTIONS"])
+def ad_status():
+    """Lets ads.html show the real, server-verified count."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    try:
+        uid = int(request.args.get("user_id", ""))
+    except ValueError:
+        return jsonify({"status": "error", "message": "bad user_id"}), 400
+    row = db.get_or_create_user(uid)
+    return jsonify({"ads_watched": row["ads_watched"], "required": config.ADS_REQUIRED})
 
 
 # ─────────────────────────── Bot thread ──────────────────────────────

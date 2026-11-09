@@ -36,7 +36,7 @@ Required so the bot can verify real membership.
    - **Start Command:** `python app.py`
    - **Instance Type:** Free
 5. Add Environment Variables (Render dashboard → Environment):
-   - `BOT_TOKEN` = your real token (revoke the one you pasted in chat via BotFather `/revoke`, use the new one here)
+   - `BOT_TOKEN` = your bot token (required; it is no longer hardcoded in config.py. Revoke the old exposed one with BotFather `/revoke`)
    - `TELEGRAM_CHANNEL_ID` = the numeric ID from Part B
    - `ADS_WEBAPP_URL` = your GitHub Pages URL from Part A
    - `POSTBACK_SECRET` = make up any random string
@@ -68,7 +68,7 @@ Render's free tier sleeps after 15 minutes with no HTTP traffic — which would 
 ## How the flow works end to end
 
 1. `/start` → bot shows "Open Ads Page" (opens `ads.html` as a Telegram Mini App, from GitHub Pages).
-2. User taps "Watch Ad" 2 times inside the Mini App. Each real completion triggers Monetag's server postback → hits your Render app → increments their count in the DB.
+2. User taps "Watch Ad" 2 times inside the Mini App. Each real impression triggers Monetag's server postback → your Render app → +1 in the DB. Clicks and duplicate postbacks are not counted, and `/client_ad_ping` only logs.
 3. User returns to the chat, taps "Check my progress".
 4. At 5/5 → bot shows Step 2 (Facebook, YouTube, Telegram buttons + Unlock).
 5. Telegram join is verified for real via `getChatMember`. Facebook/YouTube stay honor-system — no public API can verify these.

@@ -5,6 +5,7 @@ import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -50,7 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.get_or_create_user(user.id, user.username)
 
     text = (
-        f"👋 Welcome {user.first_name}!\n\n"
+        "👋 Welcome!\n\n"
         f"To unlock your link, complete 2 quick steps:\n\n"
         f"*Step 1:* Watch {config.ADS_REQUIRED} ads below\n"
         f"*Step 2:* Follow our Facebook, YouTube & Telegram\n\n"
@@ -59,6 +60,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         text, parse_mode=ParseMode.MARKDOWN, reply_markup=step1_keyboard(0)
     )
+
+
+async def safe_edit(query, text, **kwargs):
+    """edit_message_text that ignores Telegram's 'message is not modified'
+    error (happens when the user taps Check progress and nothing changed)."""
+    try:
+        await query.edit_message_text(text, **kwargs)
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            raise
 
 
 async def check_ads_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,15 +85,15 @@ async def check_ads_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "🎉 Step 1 complete! You've watched all required ads.\n\n"
             "Now finish *Step 2* — follow us everywhere below, then tap Unlock."
         )
-        await query.edit_message_text(
-            text, parse_mode=ParseMode.MARKDOWN, reply_markup=step2_keyboard()
+        await safe_edit(
+            query, text, parse_mode=ParseMode.MARKDOWN, reply_markup=step2_keyboard()
         )
     else:
         text = (
             f"You've watched {watched}/{config.ADS_REQUIRED} ads.\n"
             f"Keep watching, then check again 👇"
         )
-        await query.edit_message_text(text, reply_markup=step1_keyboard(watched))
+        await safe_edit(query, text, reply_markup=step1_keyboard(watched))
 
 
 async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,6 +157,8 @@ async def check_telegram_membership(context: ContextTypes.DEFAULT_TYPE, user_id:
         member = await context.bot.get_chat_member(
             chat_id=config.TELEGRAM_CHANNEL_ID, user_id=user_id
         )
+        if member.status == "restricted":
+            return bool(getattr(member, "is_member", True))
         return member.status not in ("left", "kicked")
     except Exception as e:
         logger.warning(f"Membership check failed for {user_id}: {e}")

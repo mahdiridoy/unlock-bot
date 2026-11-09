@@ -1,10 +1,12 @@
 import os
 
 # ── Telegram bot token (from BotFather) ─────────────────────────────
-# NOTE: since this token was pasted in a chat, it's effectively exposed.
-# Recommended: revoke it via BotFather (/revoke) and generate a new one,
-# then set it as an environment variable instead of hardcoding it here.
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8678859276:AAHojaYn_1oLAYut8fj0zwaEuZ3uS3ZgZtI")
+# Set it ONLY as an environment variable (BOT_TOKEN). The old token that was
+# hardcoded here has been removed because it was exposed - revoke it in
+# BotFather (/revoke) and use the new one.
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN environment variable is not set")
 
 # ── Channel the user must join (bot must be ADMIN here) ─────────────
 # Use the numeric chat id (starts with -100...) if possible — more reliable
@@ -33,6 +35,13 @@ SPECIAL_M3U_NAME = "Special M3U Link by Ridoy"
 SPECIAL_M3U_URL = os.environ.get("SPECIAL_M3U_URL", "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u")
 SPECIAL_APP_URL_TV = "https://github.com/mahdiridoy/MahSuratStreamTV/releases/latest"
 SPECIAL_APP_URL_STREAM = "https://github.com/mahdiridoy/MahSuratStream/releases/latest"
+# ── Ad counting rules ────────────────────────────────────────────────
+# Only these Monetag postback events count as a watched ad. "click" is NOT
+# counted, so clicks can never be used to finish Step 1.
+COUNTED_EVENTS = {"impression"}
+# Ignore a second postback arriving this soon after a counted one (duplicates).
+ADS_MIN_INTERVAL_SECONDS = 5
+
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 
