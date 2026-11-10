@@ -289,6 +289,17 @@ async def check_telegram_membership(context: ContextTypes.DEFAULT_TYPE, user_id:
         return False
 
 
+async def debug_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug: log every update type received"""
+    logger.info(f"🔍 UPDATE: type={update.__class__.__name__}, "
+                f"chat={update.effective_chat.id if update.effective_chat else None}, "
+                f"user={update.effective_user.id if update.effective_user else None}, "
+                f"channel_post={bool(update.channel_post)}, "
+                f"edited_channel_post={bool(update.edited_channel_post)}, "
+                f"message={bool(update.message)}, "
+                f"doc={bool(update.message.document if update.message else (update.channel_post.document if update.channel_post else False))}")
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Optional /status command so users can check progress anytime."""
     user_id = update.effective_user.id
@@ -340,6 +351,8 @@ def build_application():
     # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
     # Use ChatType.CHANNEL + Document filter to catch all channel posts with files (PTB v21+)
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL & filters.Document.ALL, channel_post_handler))
+    # Debug: log ALL updates
+    application.add_handler(MessageHandler(filters.ALL, debug_all_updates), group=-1)
     application.add_error_handler(error_handler)
     return application
 
