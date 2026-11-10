@@ -10,6 +10,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 import config
@@ -87,6 +89,101 @@ async def check_ads_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(text, reply_markup=step1_keyboard(watched))
 
 
+async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle data sent from ads.html via Telegram.WebApp.sendData()"""
+    data = update.effective_message.web_app_data.data
+    try:
+        payload = json.loads(data)
+        if payload.get("type") == "ads_complete":
+            user_id = update.effective_user.id
+            user_row = db.get_or_create_user(user_id, update.effective_user.username)
+            if user_row["ads_watched"] >= config.ADS_REQUIRED:
+                text = (
+                    "🎉 Step 1 complete! You've watched all required ads.\n\n"
+                    "Now finish *Step 2* — follow us everywhere below, then tap Unlock."
+                )
+                await update.message.reply_text(
+                    text, parse_mode=ParseMode.MARKDOWN, reply_markup=step2_keyboard()
+                )
+    except Exception as e:
+        logger.warning(f"web_app_data parse failed: {e}")
+
+
+async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Download APK from GitHub and send as document, or provide direct link if too large."""
+    query = update.callback_query
+    await query.answer("Fetching latest APK...")
+    
+    # Parse repo from callback_data: "download_apk:mahdiridoy/MahSuratStreamTV"
+    repo = query.data.split(":", 1)[1]
+    user_id = query.from_user.id
+    
+    await query.edit_message_text("⏳ Fetching latest release from GitHub...")
+    
+    try:
+        url, asset_name, tag = await asyncio.get_running_loop().run_in_executor(
+            None, _latest_apk, repo
+        )
+        
+        if not url:
+            await query.edit_message_text(
+                f"❌ No APK found in latest release.\n"
+                f"Try the release page: https://github.com/{repo}/releases/latest"
+            )
+            return
+        
+        ver = f" ({tag})" if tag else ""
+        await query.edit_message_text(f"⬇️ Downloading {asset_name}{ver}...")
+        
+        # Download the APK to a temp file
+        import tempfile
+        import os
+        
+        req = urllib.request.Request(url, headers={"User-Agent": "mahsurat-unlock-bot"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            # Check file size first
+            content_length = resp.headers.get("Content-Length")
+            if content_length:
+                size_mb = int(content_length) / (1024 * 1024)
+                if size_mb > 49:  # Telegram bot limit is 50MB
+                    await query.edit_message_text(
+                        f"📦 {asset_name}{ver} ({size_mb:.1f} MB)\n\n"
+                        f"File is too large to send directly via Telegram (>50 MB limit).\n"
+                        f"Tap below to download directly:",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("📥 Download APK", url=url)
+                        ]])
+                    )
+                    return
+            
+            # Download to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".apk") as tmp:
+                tmp.write(resp.read())
+                tmp_path = tmp.name
+        
+        # Send as document
+        await query.edit_message_text(f"📤 Sending {asset_name}{ver}...")
+        
+        with open(tmp_path, "rb") as f:
+            await context.bot.send_document(
+                chat_id=user_id,
+                document=f,
+                filename=asset_name,
+                caption=f"{asset_name}{ver}\n\nSource: https://github.com/{repo}/releases/latest"
+            )
+        
+        await query.edit_message_text(f"✅ Sent {asset_name}{ver}!")
+        os.unlink(tmp_path)
+        
+    except Exception as e:
+        logger.exception(f"APK download/send failed for {repo}: {e}")
+        await query.edit_message_text(
+            f"❌ Failed to send APK.\n"
+            f"Error: {str(e)[:200]}\n\n"
+            f"Try downloading directly: https://github.com/{repo}/releases/latest"
+        )
+
+
 async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -122,25 +219,14 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
     ]
     buttons = []
     for label, repo, fallback in repos:
-        try:
-            url, asset_name, tag = await asyncio.get_running_loop().run_in_executor(
-                None, _latest_apk, repo
-            )
-            ver = f" ({tag})" if tag else ""
-            if url:
-                buttons.append([InlineKeyboardButton(f"{label}{ver}", url=url)])
-            else:
-                buttons.append([InlineKeyboardButton(f"{label}{ver}", url=fallback)])
-        except Exception as e:
-            logger.warning(f"latest apk fetch failed for {repo}: {e}")
-            buttons.append([InlineKeyboardButton(label, url=fallback)])
+        buttons.append([InlineKeyboardButton(label, callback_data=f"download_apk:{repo}")])
 
     # Add the Telegram Movie Bot link as 3rd item
     buttons.append([InlineKeyboardButton("3️⃣ Telegram Movie Bot", url=config.TELEGRAM_MOVIE_BOT_LINK)])
 
     await query.edit_message_text(
         "🎉 Verified! Here are your unlocked apps:\n\n"
-        "Tap each button to download/open:\n"
+        "Tap each button to get the latest APK:\n"
         "• 1️⃣ TV App — MahSuratStream TV\n"
         "• 2️⃣ Mobile App — MahSuratStream\n"
         "• 3️⃣ Telegram Movie Bot",
@@ -208,6 +294,8 @@ def build_application():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CallbackQueryHandler(check_ads_callback, pattern="^check_ads$"))
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
+    application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     application.add_error_handler(error_handler)
     return application
 

@@ -138,8 +138,13 @@
     running = false;
     btn.disabled = true;
     btn.textContent = "✅ All ads watched!";
-    statusEl.textContent = "All ads done — you can close this page.";
+    statusEl.textContent = "All ads done — sending completion to bot...";
     statusEl.className = "success";
+
+    // Notify bot via WebApp sendData so it can auto-advance
+    if (tg && tg.sendData) {
+      tg.sendData(JSON.stringify({ type: "ads_complete", watched }));
+    }
   }
 
   btn.addEventListener("click", runAds);
