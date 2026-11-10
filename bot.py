@@ -438,6 +438,78 @@ async def apk_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
+async def scan_channel_apks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: Scan FULL channel history for APK files and store latest versions"""
+    user_id = update.effective_user.id
+    await update.message.reply_text("🔍 Scanning @MahSuratAPKStorage channel history for APKs...")
+    
+    try:
+        channel_id = config.APK_STORAGE_CHANNEL_ID
+        found_tv = None
+        found_mobile = None
+        scanned = 0
+        
+        # Iterate through channel history
+        async for msg in context.bot.get_chat_history(chat_id=channel_id, limit=200):
+            scanned += 1
+            if not msg.document:
+                continue
+            
+            file_name = msg.document.file_name or ""
+            file_size = msg.document.file_size
+            
+            # Determine app type
+            app_type = None
+            if config.APK_PATTERN_TV in file_name:
+                app_type = "tv"
+            elif config.APK_PATTERN_MOBILE in file_name:
+                app_type = "mobile"
+            else:
+                continue
+            
+            # Extract version
+            version = db.parse_version(file_name)
+            if not version:
+                continue
+            
+            # Keep latest (first found in history = newest)
+            if app_type == "tv" and found_tv is None:
+                found_tv = (msg.message_id, file_name, version, file_size)
+            elif app_type == "mobile" and found_mobile is None:
+                found_mobile = (msg.message_id, file_name, version, file_size)
+            
+            # Stop if both found
+            if found_tv and found_mobile:
+                break
+        
+        # Save found APKs
+        results = []
+        if found_tv:
+            msg_id, fname, ver, fsize = found_tv
+            db.save_apk_info("tv", msg_id, fname, ver, fsize)
+            results.append(f"📺 TV: {fname} v{ver} (msg_id={msg_id})")
+        
+        if found_mobile:
+            msg_id, fname, ver, fsize = found_mobile
+            db.save_apk_info("mobile", msg_id, fname, ver, fsize)
+            results.append(f"📱 Mobile: {fname} v{ver} (msg_id={msg_id})")
+        
+        if results:
+            await update.message.reply_text(
+                f"✅ Scan complete! Scanned {scanned} messages.\n\n" + "\n".join(results),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ No matching APKs found in last {scanned} messages.\n"
+                f"Checked for patterns: '{config.APK_PATTERN_TV}' and '{config.APK_PATTERN_MOBILE}'"
+            )
+            
+    except Exception as e:
+        logger.exception(f"scan_channel_apks failed: {e}")
+        await update.message.reply_text(f"❌ Scan failed: {e}")
+
+
 async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
     """Logs any exception raised inside a handler instead of letting it
     disappear silently (which looks like the bot 'doing nothing')."""
@@ -473,6 +545,7 @@ def build_application():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("apk_status", apk_status))
+    application.add_handler(CommandHandler("scan_apks", scan_channel_apks))
     application.add_handler(CallbackQueryHandler(check_ads_callback, pattern="^check_ads$"))
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
