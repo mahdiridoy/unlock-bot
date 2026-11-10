@@ -338,8 +338,8 @@ def build_application():
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
-    application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_post_handler))
-    application.add_handler(MessageHandler(filters.UpdateType.EDITED_CHANNEL_POST, channel_post_handler))
+    # Use ChatType.CHANNEL + Document filter to catch all channel posts with files (PTB v21+)
+    application.add_handler(MessageHandler(filters.ChatType.CHANNEL & filters.Document.ALL, channel_post_handler))
     application.add_error_handler(error_handler)
     return application
 
