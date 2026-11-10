@@ -238,12 +238,16 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     logger.info(f"📥 Configured APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID}")
     
     # Only process messages from the configured storage channel
-    # Compare both with and without -100 prefix
-    configured_id = str(config.APK_STORAGE_CHANNEL_ID)
-    received_id = str(msg.chat_id)
+    # Compare both with and without -100 prefix - handle both int and str
+    try:
+        configured_id = int(str(config.APK_STORAGE_CHANNEL_ID).replace("-100", ""))
+        received_id = int(str(msg.chat_id).replace("-100", ""))
+    except ValueError:
+        configured_id = str(config.APK_STORAGE_CHANNEL_ID)
+        received_id = str(msg.chat_id)
     
-    if received_id != configured_id and received_id != configured_id.lstrip("-100") and received_id != "-" + configured_id.lstrip("-100"):
-        logger.warning(f"📥 Ignoring - channel mismatch: got {received_id}, expected {configured_id}")
+    if received_id != configured_id:
+        logger.warning(f"📥 Ignoring - channel mismatch: got {msg.chat_id}, expected {config.APK_STORAGE_CHANNEL_ID}")
         return
     
     doc = msg.document
@@ -393,10 +397,45 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Optional /status command so users can check progress anytime."""
     user_id = update.effective_user.id
     row = db.get_or_create_user(user_id, update.effective_user.username)
+    
+    # Also show APK info
+    tv_apk = db.get_apk_info("tv")
+    mobile_apk = db.get_apk_info("mobile")
+    
     await update.message.reply_text(
         f"Ads watched: {row['ads_watched']}/{config.ADS_REQUIRED}\n"
-        f"Step 2 claimed: {'Yes' if row['step2_claimed'] else 'No'}"
+        f"Step 2 claimed: {'Yes' if row['step2_claimed'] else 'No'}\n"
+        f"Unlock expired: {'Yes' if db.is_unlock_expired(user_id) else 'No'}\n\n"
+        f"📱 TV App: {tv_apk['file_name'] if tv_apk else 'Not uploaded'} (v{tv_apk['version'] if tv_apk else 'N/A'})\n"
+        f"📱 Mobile App: {mobile_apk['file_name'] if mobile_apk else 'Not uploaded'} (v{mobile_apk['version'] if mobile_apk else 'N/A'})"
     )
+
+
+async def apk_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to check stored APK info"""
+    tv_apk = db.get_apk_info("tv")
+    mobile_apk = db.get_apk_info("mobile")
+    
+    text = "📦 <b>Stored APK Info:</b>\n\n"
+    if tv_apk:
+        text += f"📺 <b>TV App:</b>\n"
+        text += f"  File: {tv_apk['file_name']}\n"
+        text += f"  Version: {tv_apk['version']}\n"
+        text += f"  Msg ID: {tv_apk['message_id']}\n"
+        text += f"  Size: {tv_apk.get('file_size', 'N/A')}\n\n"
+    else:
+        text += "📺 <b>TV App:</b> Not uploaded\n\n"
+    
+    if mobile_apk:
+        text += f"📱 <b>Mobile App:</b>\n"
+        text += f"  File: {mobile_apk['file_name']}\n"
+        text += f"  Version: {mobile_apk['version']}\n"
+        text += f"  Msg ID: {mobile_apk['message_id']}\n"
+        text += f"  Size: {mobile_apk.get('file_size', 'N/A')}\n"
+    else:
+        text += "📱 <b>Mobile App:</b> Not uploaded\n"
+    
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
@@ -433,6 +472,7 @@ def build_application():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("apk_status", apk_status))
     application.add_handler(CallbackQueryHandler(check_ads_callback, pattern="^check_ads$"))
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
