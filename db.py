@@ -99,9 +99,14 @@ def mark_step2_claimed(user_id: int):
 def is_unlock_expired(user_id: int, hours: int = 1) -> bool:
     """Check if user's unlock has expired (default 1 hour)"""
     conn = get_conn()
-    row = conn.execute(
-        "SELECT step2_claimed_at FROM users WHERE user_id = ?", (user_id,)
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT step2_claimed_at FROM users WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # Column doesn't exist in old DB schema - treat as not expired
+        conn.close()
+        return False
     conn.close()
     if not row or not row["step2_claimed_at"]:
         return True
