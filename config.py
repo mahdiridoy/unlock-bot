@@ -44,3 +44,11 @@ DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 
 # ── Shared secret so Monetag postback can't be spoofed easily ────────
 POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "change-this-secret")
+
+# ── APK Storage Channel (bot must be ADMIN here) ─────────────────────
+# Forward a message from @MahSuratAPKStorage to @RawDataBot to get numeric ID
+APK_STORAGE_CHANNEL_ID = os.environ.get("APK_STORAGE_CHANNEL_ID", "-100xxxxxxxxxx")
+
+# APK filename patterns for auto-detection
+APK_PATTERN_TV = "MahSuratStreamTV"
+APK_PATTERN_MOBILE = "MahSuratStream"

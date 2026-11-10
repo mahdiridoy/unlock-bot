@@ -110,78 +110,89 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Download APK from GitHub and send as document, or provide direct link if too large."""
+    """Send APK from storage channel using copyMessage (bypasses 50MB limit)."""
     query = update.callback_query
-    await query.answer("Fetching latest APK...")
+    await query.answer("Sending APK...")
     
-    # Parse repo from callback_data: "download_apk:mahdiridoy/MahSuratStreamTV"
-    repo = query.data.split(":", 1)[1]
+    # Parse app_type from callback_data: "download_apk:tv" or "download_apk:mobile"
+    app_type = query.data.split(":", 1)[1]
     user_id = query.from_user.id
     
-    await query.edit_message_text("⏳ Fetching latest release from GitHub...")
+    apk_info = db.get_apk_info(app_type)
+    if not apk_info:
+        await query.edit_message_text(
+            f"❌ No {app_type} APK uploaded yet.\n"
+            f"Ask admin to upload to @MahSuratAPKStorage"
+        )
+        return
     
     try:
-        url, asset_name, tag = await asyncio.get_running_loop().run_in_executor(
-            None, _latest_apk, repo
+        await query.edit_message_text(f"📤 Sending {apk_info['file_name']} (v{apk_info['version']})...")
+        
+        await context.bot.copy_message(
+            chat_id=user_id,
+            from_chat_id=config.APK_STORAGE_CHANNEL_ID,
+            message_id=apk_info["message_id"],
+            caption=f"📱 {apk_info['file_name']}\nVersion: v{apk_info['version']}"
         )
         
-        if not url:
-            await query.edit_message_text(
-                f"❌ No APK found in latest release.\n"
-                f"Try the release page: https://github.com/{repo}/releases/latest"
-            )
-            return
-        
-        ver = f" ({tag})" if tag else ""
-        await query.edit_message_text(f"⬇️ Downloading {asset_name}{ver}...")
-        
-        # Download the APK to a temp file
-        import tempfile
-        import os
-        
-        req = urllib.request.Request(url, headers={"User-Agent": "mahsurat-unlock-bot"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            # Check file size first
-            content_length = resp.headers.get("Content-Length")
-            if content_length:
-                size_mb = int(content_length) / (1024 * 1024)
-                if size_mb > 49:  # Telegram bot limit is 50MB
-                    await query.edit_message_text(
-                        f"📦 {asset_name}{ver} ({size_mb:.1f} MB)\n\n"
-                        f"File is too large to send directly via Telegram (>50 MB limit).\n"
-                        f"Tap below to download directly:",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("📥 Download APK", url=url)
-                        ]])
-                    )
-                    return
-            
-            # Download to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".apk") as tmp:
-                tmp.write(resp.read())
-                tmp_path = tmp.name
-        
-        # Send as document
-        await query.edit_message_text(f"📤 Sending {asset_name}{ver}...")
-        
-        with open(tmp_path, "rb") as f:
-            await context.bot.send_document(
-                chat_id=user_id,
-                document=f,
-                filename=asset_name,
-                caption=f"{asset_name}{ver}\n\nSource: https://github.com/{repo}/releases/latest"
-            )
-        
-        await query.edit_message_text(f"✅ Sent {asset_name}{ver}!")
-        os.unlink(tmp_path)
+        await query.edit_message_text("✅ APK sent!")
         
     except Exception as e:
-        logger.exception(f"APK download/send failed for {repo}: {e}")
+        logger.exception(f"copyMessage failed for {app_type}: {e}")
         await query.edit_message_text(
             f"❌ Failed to send APK.\n"
             f"Error: {str(e)[:200]}\n\n"
-            f"Try downloading directly: https://github.com/{repo}/releases/latest"
+            f"Make sure bot is admin in storage channel."
         )
+
+
+async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Auto-detect APK uploads to @MahSuratAPKStorage and save latest version."""
+    msg = update.channel_post or update.edited_channel_post
+    if not msg or not msg.document:
+        return
+    
+    # Only process messages from the configured storage channel
+    if str(msg.chat_id) != str(config.APK_STORAGE_CHANNEL_ID).lstrip("-100"):
+        # Also check with -100 prefix
+        if msg.chat_id != config.APK_STORAGE_CHANNEL_ID:
+            return
+    
+    doc = msg.document
+    file_name = doc.file_name or ""
+    file_size = doc.file_size
+    
+    # Determine app type from filename
+    app_type = None
+    if config.APK_PATTERN_TV in file_name:
+        app_type = "tv"
+    elif config.APK_PATTERN_MOBILE in file_name:
+        app_type = "mobile"
+    else:
+        return  # Not our APK
+    
+    # Extract version
+    version = db.parse_version(file_name)
+    if not version:
+        logger.warning(f"Could not parse version from {file_name}")
+        return
+    
+    # Save if newer
+    updated = db.save_apk_info(
+        app_type=app_type,
+        message_id=msg.message_id,
+        file_name=file_name,
+        version=version,
+        file_size=file_size
+    )
+    
+    if updated:
+        logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={msg.message_id})")
+        # Optional: notify admin
+        # await context.bot.send_message(ADMIN_ID, f"Updated {app_type}: v{version}")
+    else:
+        logger.info(f"ℹ️ Skipped {app_type} APK {file_name} v{version} (not newer)")
 
 
 async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -212,17 +223,12 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     db.mark_step2_claimed(user_id)
 
-    # Fetch the actual latest APK asset from each GitHub release
-    repos = [
-        ("1️⃣ TV App", "mahdiridoy/MahSuratStreamTV", config.SPECIAL_APP_URL_TV),
-        ("2️⃣ Mobile App", "mahdiridoy/MahSuratStream", config.SPECIAL_APP_URL_STREAM),
+    # Buttons for TV and Mobile apps (stored in @MahSuratAPKStorage)
+    buttons = [
+        [InlineKeyboardButton("1️⃣ TV App", callback_data="download_apk:tv")],
+        [InlineKeyboardButton("2️⃣ Mobile App", callback_data="download_apk:mobile")],
+        [InlineKeyboardButton("3️⃣ Telegram Movie Bot", url=config.TELEGRAM_MOVIE_BOT_LINK)],
     ]
-    buttons = []
-    for label, repo, fallback in repos:
-        buttons.append([InlineKeyboardButton(label, callback_data=f"download_apk:{repo}")])
-
-    # Add the Telegram Movie Bot link as 3rd item
-    buttons.append([InlineKeyboardButton("3️⃣ Telegram Movie Bot", url=config.TELEGRAM_MOVIE_BOT_LINK)])
 
     await query.edit_message_text(
         "🎉 Verified! Here are your unlocked apps:\n\n"
@@ -296,6 +302,9 @@ def build_application():
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
+    # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
+    application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, channel_post_handler))
+    application.add_handler(MessageHandler(filters.UpdateType.EDITED_CHANNEL_POST, channel_post_handler))
     application.add_error_handler(error_handler)
     return application
 
