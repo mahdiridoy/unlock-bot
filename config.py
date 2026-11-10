@@ -27,6 +27,9 @@ MONETAG_ZONE_ID = "12223543"
 # Example: "https://yourusername.github.io/unlock-bot-ads/ads.html"
 ADS_WEBAPP_URL = os.environ.get("ADS_WEBAPP_URL", "https://PUT_YOUR_HOSTED_ADS_HTML_URL_HERE")
 
+# ── Backend URL (Render) for ad postback — used by ads.html ──────────
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://unlock-bot-xieo.onrender.com")
+
 # ── The final reward link unlocked after both steps ──────────────────
 FINAL_UNLOCK_LINK = "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u"
 SPECIAL_M3U_NAME = "Special M3U Link by Ridoy"

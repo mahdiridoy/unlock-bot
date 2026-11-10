@@ -22,10 +22,12 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────── Keyboards ───────────────────────────────
 
 def step1_keyboard(ads_watched: int):
+    # Pass backend URL to ads.html so client_ad_ping works on any deployment
+    ads_url = f"{config.ADS_WEBAPP_URL}?backend={config.BACKEND_URL}"
     rows = [
         [InlineKeyboardButton(
             f"▶️ Open Ads Page ({ads_watched}/{config.ADS_REQUIRED} done)",
-            web_app=WebAppInfo(url=config.ADS_WEBAPP_URL),
+            web_app=WebAppInfo(url=ads_url),
         )],
         [InlineKeyboardButton("🔄 Check my progress", callback_data="check_ads")],
     ]
