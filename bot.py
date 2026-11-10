@@ -160,11 +160,18 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not msg or not msg.document:
         return
     
+    # Debug: log all channel posts
+    logger.info(f"📥 Channel post received: chat_id={msg.chat_id}, file={msg.document.file_name}")
+    logger.info(f"📥 Configured APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID}")
+    
     # Only process messages from the configured storage channel
-    if str(msg.chat_id) != str(config.APK_STORAGE_CHANNEL_ID).lstrip("-100"):
-        # Also check with -100 prefix
-        if msg.chat_id != config.APK_STORAGE_CHANNEL_ID:
-            return
+    # Compare both with and without -100 prefix
+    configured_id = str(config.APK_STORAGE_CHANNEL_ID)
+    received_id = str(msg.chat_id)
+    
+    if received_id != configured_id and received_id != configured_id.lstrip("-100") and received_id != "-" + configured_id.lstrip("-100"):
+        logger.warning(f"📥 Ignoring - channel mismatch: got {received_id}, expected {configured_id}")
+        return
     
     doc = msg.document
     file_name = doc.file_name or ""
@@ -177,6 +184,7 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif config.APK_PATTERN_MOBILE in file_name:
         app_type = "mobile"
     else:
+        logger.info(f"📥 Not our APK pattern: {file_name} (looking for {config.APK_PATTERN_TV} or {config.APK_PATTERN_MOBILE})")
         return  # Not our APK
     
     # Extract version
