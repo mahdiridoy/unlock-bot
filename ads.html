@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watch Ads to Unlock</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Monetag SDK — main zone -->
+<script src='//libtl.com/sdk.js' data-zone='12223543' data-sdk='show_12223543'></script>
+<style>
+  body {
+    font-family: -apple-system, Roboto, Arial, sans-serif;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #111111);
+    text-align: center;
+    padding: 24px 16px;
+    margin: 0;
+  }
+  h2 { margin-bottom: 4px; }
+  #progress { font-size: 18px; margin: 16px 0; }
+  button {
+    background: var(--tg-theme-button-color, #2ea6ff);
+    color: var(--tg-theme-button-text-color, #ffffff);
+    border: none;
+    border-radius: 10px;
+    padding: 14px 24px;
+    font-size: 16px;
+    width: 100%;
+    max-width: 320px;
+    margin-top: 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; }
+  #status { margin-top: 16px; font-size: 14px; color: #888; min-height: 20px; }
+</style>
+</head>
+<body>
+
+<h2>🎬 Watch Ads to Unlock</h2>
+<div id="progress">Ad 0 / 2 watched</div>
+<button id="watchBtn">▶️ Watch Ad</button>
+<div id="status"></div>
+
+<script>
+  const tg = window.Telegram?.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  // Identify the user. Prefer Telegram's WebApp user id (secure context),
+  // fall back to a "uid" query param if the bot passed one manually.
+  const urlParams = new URLSearchParams(window.location.search);
+  const telegramUser = tg?.initDataUnsafe?.user;
+  const userId = telegramUser?.id || urlParams.get("uid");
+
+  const ADS_REQUIRED = 2;
+  const POSTBACK_BASE = "https://unlock-bot-xieo.onrender.com";
+  let watched = parseInt(sessionStorage.getItem("ads_watched") || "0", 10);
+
+  const progressEl = document.getElementById("progress");
+  const statusEl = document.getElementById("status");
+  const btn = document.getElementById("watchBtn");
+
+  function renderProgress() {
+    progressEl.textContent = `Ad ${watched} / ${ADS_REQUIRED} watched`;
+    if (watched >= ADS_REQUIRED) {
+      btn.disabled = true;
+      btn.textContent = "✅ All ads watched!";
+      statusEl.textContent = "Go back to the bot and tap 'Check my progress'.";
+      if (tg) setTimeout(() => tg.close(), 2500);
+    }
+  }
+  renderProgress();
+
+  async function notifyBackend() {
+    // This is a client-side notice for instant UI feedback only.
+    // The AUTHORITATIVE record comes from Monetag's server-to-server postback,
+    // configured in your Monetag dashboard to hit /monetag_postback on your backend.
+    try {
+      await fetch(`${POSTBACK_BASE}/client_ad_ping?user_id=${encodeURIComponent(userId)}`, {
+        method: "POST",
+      });
+    } catch (e) {
+      console.warn("Backend ping failed (non-fatal):", e);
+    }
+  }
+
+  let running = false;
+
+  async function runAds() {
+    if (running || watched >= ADS_REQUIRED) return;
+    if (typeof show_12223543 !== "function") {
+      statusEl.textContent = "Ad SDK not loaded yet — please wait a moment and try again.";
+      return;
+    }
+    running = true;
+    btn.disabled = true;
+
+    while (watched < ADS_REQUIRED) {
+      statusEl.textContent = `Loading ad ${watched + 1} of ${ADS_REQUIRED}...`;
+      try {
+        await Promise.race([
+          show_12223543({ ymid: String(userId || "unknown") }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("ad timeout")), 30000)),
+        ]);
+        watched += 1;
+        sessionStorage.setItem("ads_watched", String(watched));
+        statusEl.textContent = `✅ Ad ${watched} of ${ADS_REQUIRED} completed!`;
+        notifyBackend();
+        renderProgress();
+        // Give the SDK time to tear down the previous overlay before next.
+        if (watched < ADS_REQUIRED) await new Promise((r) => setTimeout(r, 1500));
+      } catch (err) {
+        const timedOut = String(err?.message || "").includes("timeout");
+        statusEl.textContent = timedOut
+          ? "⚠️ Ad timed out — closing..."
+          : "⚠️ Ad failed or needs a tap — tap to retry.";
+        console.warn(err);
+        running = false;
+        btn.disabled = false;
+        btn.textContent = watched >= ADS_REQUIRED ? "✅ All ads watched!" : "▶️ Watch Ads";
+        // User closes the page manually.
+        return;
+      }
+    }
+
+    running = false;
+    btn.disabled = true;
+    btn.textContent = "✅ All ads watched!";
+    statusEl.textContent = "All ads done — you can close this page.";
+  }
+
+  btn.addEventListener("click", runAds);
+
+  // Auto-start once the SDK is ready so the user doesn't have to tap.
+  function tryAutoStart(attempts = 0) {
+    if (watched >= ADS_REQUIRED) return;
+    if (typeof show_12223543 === "function") {
+      runAds();
+    } else if (attempts < 10) {
+      setTimeout(() => tryAutoStart(attempts + 1), 500);
+    }
+  }
+  setTimeout(() => tryAutoStart(), 800);
+</script>
+</body>
+</html>
