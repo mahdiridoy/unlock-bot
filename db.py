@@ -23,6 +23,12 @@ def init_db():
             updated_at INTEGER
         )
     """)
+    # Migration: add step2_claimed_at column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN step2_claimed_at INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
     conn.execute("""
         CREATE TABLE IF NOT EXISTS apk_storage (
             app_type TEXT PRIMARY KEY,  -- 'tv' or 'mobile'
