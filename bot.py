@@ -382,6 +382,7 @@ async def debug_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 UPDATE: type={update.__class__.__name__}, "
                 f"chat={update.effective_chat.id if update.effective_chat else None}, "
                 f"user={update.effective_user.id if update.effective_user else None}, "
+                f"callback_query={update.callback_query.data if update.callback_query else None}, "
                 f"channel_post={bool(update.channel_post)}, "
                 f"edited_channel_post={bool(update.edited_channel_post)}, "
                 f"message={bool(update.message)}, "
