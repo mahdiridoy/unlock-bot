@@ -122,6 +122,19 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
     app_type = query.data.split(":", 1)[1]
     user_id = query.from_user.id
     
+    # Check if unlock expired
+    user_row = db.get_or_create_user(user_id, query.from_user.username)
+    if not user_row["step2_claimed"] or db.is_unlock_expired(user_id):
+        await query.edit_message_text(
+            "⏰ Your unlock has expired (1 hour limit).\n\n"
+            "Please complete the steps again to get the latest APK.",
+            reply_markup=step1_keyboard(0)
+        )
+        # Reset for fresh start
+        db.reset_user_step2(user_id)
+        db.set_ads_watched(user_id, 0)
+        return
+    
     apk_info = db.get_apk_info(app_type)
     if not apk_info:
         await query.edit_message_text(
@@ -143,7 +156,15 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Track user's version
         db.set_user_apk_version(user_id, app_type, apk_info["version"])
         
-        await query.edit_message_text("✅ APK sent!")
+        # Show success with BACK button
+        back_button = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back to Apps", callback_data="back_to_apps")
+        ]])
+        await query.edit_message_text(
+            f"✅ {apk_info['file_name']} (v{apk_info['version']}) sent!\n\n"
+            f"Tap below to get the other app:",
+            reply_markup=back_button
+        )
         
     except Exception as e:
         logger.exception(f"copyMessage failed for {app_type}: {e}")
@@ -152,6 +173,40 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"Error: {str(e)[:200]}\n\n"
             f"Make sure bot is admin in storage channel."
         )
+
+
+async def back_to_apps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Return to the apps selection menu"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    
+    # Check if unlock expired
+    user_row = db.get_or_create_user(user_id, query.from_user.username)
+    if not user_row["step2_claimed"] or db.is_unlock_expired(user_id):
+        await query.edit_message_text(
+            "⏰ Your unlock has expired (1 hour limit).\n\n"
+            "Please complete the steps again to get the latest APK.",
+            reply_markup=step1_keyboard(0)
+        )
+        db.reset_user_step2(user_id)
+        db.set_ads_watched(user_id, 0)
+        return
+    
+    buttons = [
+        [InlineKeyboardButton("1️⃣ TV App", callback_data="download_apk:tv")],
+        [InlineKeyboardButton("2️⃣ Mobile App", callback_data="download_apk:mobile")],
+        [InlineKeyboardButton("3️⃣ Telegram Movie Bot", url=config.TELEGRAM_MOVIE_BOT_LINK)],
+    ]
+    
+    await query.edit_message_text(
+        "🎉 Verified! Here are your unlocked apps (valid for 1 hour):\n\n"
+        "Tap each button to get the latest APK:\n"
+        "• 1️⃣ TV App — MahSuratStream TV\n"
+        "• 2️⃣ Mobile App — MahSuratStream\n"
+        "• 3️⃣ Telegram Movie Bot",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,6 +298,13 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    # Check if previous unlock expired (1 hour)
+    if user_row["step2_claimed"] and db.is_unlock_expired(user_id):
+        db.reset_user_step2(user_id)
+        user_row["step2_claimed"] = 0
+        user_row["ads_watched"] = 0
+        db.set_ads_watched(user_id, 0)
+
     # Real, verifiable check: is the user actually a member of the Telegram channel?
     is_member = await check_telegram_membership(context, user_id)
 
@@ -266,7 +328,7 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
     ]
 
     await query.edit_message_text(
-        "🎉 Verified! Here are your unlocked apps:\n\n"
+        "🎉 Verified! Here are your unlocked apps (valid for 1 hour):\n\n"
         "Tap each button to get the latest APK:\n"
         "• 1️⃣ TV App — MahSuratStream TV\n"
         "• 2️⃣ Mobile App — MahSuratStream\n"
@@ -347,6 +409,7 @@ def build_application():
     application.add_handler(CallbackQueryHandler(check_ads_callback, pattern="^check_ads$"))
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
+    application.add_handler(CallbackQueryHandler(back_to_apps_callback, pattern="^back_to_apps$"))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
     # Use ChatType.CHANNEL + Document filter to catch all channel posts with files (PTB v21+)

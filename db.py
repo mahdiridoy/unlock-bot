@@ -18,6 +18,7 @@ def init_db():
             username TEXT,
             ads_watched INTEGER DEFAULT 0,
             step2_claimed INTEGER DEFAULT 0,
+            step2_claimed_at INTEGER DEFAULT 0,
             created_at INTEGER,
             updated_at INTEGER
         )
@@ -86,12 +87,25 @@ def set_ads_watched(user_id: int, count: int):
 
 def mark_step2_claimed(user_id: int):
     conn = get_conn()
+    now = int(time.time())
     conn.execute(
-        "UPDATE users SET step2_claimed = 1, updated_at = ? WHERE user_id = ?",
-        (int(time.time()), user_id),
+        "UPDATE users SET step2_claimed = 1, step2_claimed_at = ?, updated_at = ? WHERE user_id = ?",
+        (now, now, user_id),
     )
     conn.commit()
     conn.close()
+
+
+def is_unlock_expired(user_id: int, hours: int = 1) -> bool:
+    """Check if user's unlock has expired (default 1 hour)"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT step2_claimed_at FROM users WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    if not row or not row["step2_claimed_at"]:
+        return True
+    return (int(time.time()) - row["step2_claimed_at"]) > (hours * 3600)
 
 
 # ─────────────────────────── APK Storage ───────────────────────────────
