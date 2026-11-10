@@ -102,8 +102,12 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     "🎉 Step 1 complete! You've watched all required ads.\n\n"
                     "Now finish *Step 2* — follow us everywhere below, then tap Unlock."
                 )
-                await update.message.reply_text(
-                    text, parse_mode=ParseMode.MARKDOWN, reply_markup=step2_keyboard()
+                # Send to user's private chat (not reply to web_app_data message)
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=step2_keyboard()
                 )
     except Exception as e:
         logger.warning(f"web_app_data parse failed: {e}")
@@ -135,6 +139,9 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
             message_id=apk_info["message_id"],
             caption=f"📱 {apk_info['file_name']}\nVersion: v{apk_info['version']}"
         )
+        
+        # Track user's version
+        db.set_user_apk_version(user_id, app_type, apk_info["version"])
         
         await query.edit_message_text("✅ APK sent!")
         
@@ -189,8 +196,28 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if updated:
         logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={msg.message_id})")
-        # Optional: notify admin
-        # await context.bot.send_message(ADMIN_ID, f"Updated {app_type}: v{version}")
+        
+        # Notify users who have older version and reset their step2
+        old_users = db.get_users_with_old_version(app_type, version)
+        for user_id in old_users:
+            try:
+                db.reset_user_step2(user_id)
+                app_name = "TV App" if app_type == "tv" else "Mobile App"
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"🔔 <b>Update Available!</b>\n\n"
+                        f"New version of <b>{app_name}</b> is ready: <b>v{version}</b>\n\n"
+                        f"To get the latest APK, please complete the unlock steps again:\n"
+                        f"1. Watch {config.ADS_REQUIRED} ads\n"
+                        f"2. Follow our socials\n\n"
+                        f"Tap /start to begin."
+                    ),
+                    parse_mode=ParseMode.HTML
+                )
+                logger.info(f"📢 Notified user {user_id} about {app_type} update v{version}")
+            except Exception as e:
+                logger.warning(f"Failed to notify user {user_id}: {e}")
     else:
         logger.info(f"ℹ️ Skipped {app_type} APK {file_name} v{version} (not newer)")
 

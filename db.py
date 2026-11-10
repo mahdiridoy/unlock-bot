@@ -32,6 +32,15 @@ def init_db():
             updated_at INTEGER
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_apk_versions (
+            user_id INTEGER NOT NULL,
+            app_type TEXT NOT NULL,  -- 'tv' or 'mobile'
+            version TEXT NOT NULL,
+            updated_at INTEGER,
+            PRIMARY KEY (user_id, app_type)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -137,3 +146,49 @@ def get_apk_info(app_type: str) -> dict | None:
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# ─────────────────────────── User APK Version Tracking ─────────────────
+
+def get_user_apk_version(user_id: int, app_type: str) -> str | None:
+    """Get the APK version user last received for app_type"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT version FROM user_apk_versions WHERE user_id = ? AND app_type = ?",
+        (user_id, app_type)
+    ).fetchone()
+    conn.close()
+    return row["version"] if row else None
+
+
+def set_user_apk_version(user_id: int, app_type: str, version: str):
+    """Record the APK version user received"""
+    conn = get_conn()
+    now = int(time.time())
+    conn.execute("""
+        INSERT OR REPLACE INTO user_apk_versions (user_id, app_type, version, updated_at)
+        VALUES (?, ?, ?, ?)
+    """, (user_id, app_type, version, now))
+    conn.commit()
+    conn.close()
+
+
+def get_users_with_old_version(app_type: str, current_version: str) -> list[int]:
+    """Get user_ids who have older version than current_version"""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT user_id FROM user_apk_versions 
+        WHERE app_type = ? AND version != ?
+    """, (app_type, current_version)).fetchall()
+    conn.close()
+    return [r["user_id"] for r in rows]
+
+
+def reset_user_step2(user_id: int):
+    """Reset step2_claimed so user must do task again"""
+    conn = get_conn()
+    conn.execute("""
+        UPDATE users SET step2_claimed = 0, updated_at = ? WHERE user_id = ?
+    """, (int(time.time()), user_id))
+    conn.commit()
+    conn.close()
