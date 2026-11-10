@@ -136,6 +136,7 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
     
     apk_info = db.get_apk_info(app_type)
+    logger.info(f"📥 download_apk: user={user_id}, app_type={app_type}, apk_info={apk_info}")
     if not apk_info:
         await query.edit_message_text(
             f"❌ No {app_type} APK uploaded yet.\n"
@@ -161,6 +162,7 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("🔙 Back to Apps", callback_data="back_to_apps")],
             [InlineKeyboardButton("🔄 Start Over", callback_data="start_over")],
         ]
+        logger.info(f"📥 download_apk: showing success buttons for user={user_id}")
         await query.edit_message_text(
             f"✅ {apk_info['file_name']} (v{apk_info['version']}) sent!\n\n"
             f"Tap below to get the other app or restart:",
