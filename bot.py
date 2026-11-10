@@ -309,6 +309,8 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     user_row = db.get_or_create_user(user_id, query.from_user.username)
+    logger.info(f"🔓 verify_step2: user={user_id}, ads_watched={user_row['ads_watched']}, step2_claimed={user_row['step2_claimed']}")
+    
     if user_row["ads_watched"] < config.ADS_REQUIRED:
         await query.edit_message_text(
             "⚠️ You still need to finish Step 1 first (watch all the ads).",
@@ -322,9 +324,12 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
         user_row["step2_claimed"] = 0
         user_row["ads_watched"] = 0
         db.set_ads_watched(user_id, 0)
+        logger.info(f"🔓 verify_step2: unlock expired for user={user_id}, reset progress")
 
     # Real, verifiable check: is the user actually a member of the Telegram channel?
+    logger.info(f"🔓 verify_step2: checking membership for user={user_id} in channel={config.TELEGRAM_CHANNEL_ID}")
     is_member = await check_telegram_membership(context, user_id)
+    logger.info(f"🔓 verify_step2: membership result for user={user_id}: {is_member}")
 
     if not is_member:
         await query.edit_message_text(
@@ -337,6 +342,7 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     db.mark_step2_claimed(user_id)
+    logger.info(f"🔓 verify_step2: success for user={user_id}, marked step2_claimed")
 
     # Buttons for TV and Mobile apps (stored in @MahSuratAPKStorage)
     buttons = [
@@ -359,12 +365,14 @@ async def check_telegram_membership(context: ContextTypes.DEFAULT_TYPE, user_id:
     """Returns True only if the bot can confirm real membership.
     Requires the bot to be an ADMIN of TELEGRAM_CHANNEL_ID."""
     try:
+        logger.info(f"🔓 check_membership: calling get_chat_member for user={user_id}, chat={config.TELEGRAM_CHANNEL_ID}")
         member = await context.bot.get_chat_member(
             chat_id=config.TELEGRAM_CHANNEL_ID, user_id=user_id
         )
+        logger.info(f"🔓 check_membership: result for user={user_id}: status={member.status}")
         return member.status not in ("left", "kicked")
     except Exception as e:
-        logger.warning(f"Membership check failed for {user_id}: {e}")
+        logger.error(f"🔓 check_membership: FAILED for user={user_id}: {e}")
         # If the bot isn't admin yet or chat_id is wrong, this will always fail.
         return False
 
