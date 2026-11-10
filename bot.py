@@ -156,14 +156,15 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Track user's version
         db.set_user_apk_version(user_id, app_type, apk_info["version"])
         
-        # Show success with BACK button
-        back_button = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔙 Back to Apps", callback_data="back_to_apps")
-        ]])
+        # Show success with BACK button and START OVER button
+        buttons = [
+            [InlineKeyboardButton("🔙 Back to Apps", callback_data="back_to_apps")],
+            [InlineKeyboardButton("🔄 Start Over", callback_data="start_over")],
+        ]
         await query.edit_message_text(
             f"✅ {apk_info['file_name']} (v{apk_info['version']}) sent!\n\n"
-            f"Tap below to get the other app:",
-            reply_markup=back_button
+            f"Tap below to get the other app or restart:",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
         
     except Exception as e:
@@ -206,6 +207,23 @@ async def back_to_apps_callback(update: Update, context: ContextTypes.DEFAULT_TY
         "• 2️⃣ Mobile App — MahSuratStream\n"
         "• 3️⃣ Telegram Movie Bot",
         reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reset everything and show Step 1"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    
+    # Reset user progress
+    db.reset_user_step2(user_id)
+    db.set_ads_watched(user_id, 0)
+    
+    await query.edit_message_text(
+        "🔄 Starting over...\n\n"
+        f"Step 1: Watch {config.ADS_REQUIRED} ads to unlock apps.",
+        reply_markup=step1_keyboard(0)
     )
 
 
@@ -410,6 +428,7 @@ def build_application():
     application.add_handler(CallbackQueryHandler(verify_step2_callback, pattern="^verify_step2$"))
     application.add_handler(CallbackQueryHandler(download_apk_callback, pattern="^download_apk:"))
     application.add_handler(CallbackQueryHandler(back_to_apps_callback, pattern="^back_to_apps$"))
+    application.add_handler(CallbackQueryHandler(start_over_callback, pattern="^start_over$"))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
     # Use ChatType.CHANNEL + Document filter to catch all channel posts with files (PTB v21+)
