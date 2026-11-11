@@ -77,7 +77,7 @@ Render's free tier sleeps after 15 minutes with no HTTP traffic — which would 
 5. Telegram join is verified for real via `getChatMember`. Facebook/YouTube stay honor-system — no public API can verify these.
 6. On success → bot sends your `FINAL_UNLOCK_LINK`.
 
-**Auto-reset:** a background task resets expired unlocks every 5 minutes (both `step2_claimed` and `ads_watched`), and the bot re-checks expiry on every button tap. When a new APK is uploaded to the storage channel, the bot notifies all known users and resets their progress so a fresh unlock is required. The flow messages (APK document, success screen, step screens) are deleted on reset — both on a new-APK broadcast and on the 1-hour auto-expiry — so stale buttons and old APKs can't be used afterwards.
+**Auto-reset:** /start also deletes any previous flow screens, then a background task resets expired unlocks every 5 minutes (both `step2_claimed` and `ads_watched`), and the bot re-checks expiry on every button tap. When a new APK is uploaded to the storage channel, the bot notifies all known users and resets their progress so a fresh unlock is required. The flow messages (APK document, success screen, step screens) are deleted on reset — both on a new-APK broadcast and on the 1-hour auto-expiry — so stale buttons and old APKs can't be used afterwards.
 
 ---
 

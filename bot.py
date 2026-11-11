@@ -61,11 +61,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Step 2:* Follow our Facebook, YouTube & Telegram\n\n"
         f"Let's start with Step 1 👇"
     )
+    # delete the previous flow screens first, then send the new one
+    await _delete_user_messages(context.bot, user.id)
     msg = await update.message.reply_text(
         text, parse_mode=ParseMode.MARKDOWN, reply_markup=step1_keyboard(0)
     )
     # track the /start flow message so it can be deleted on reset/expiry
-    db.add_live_messages(user_id, [msg.message_id])
+    db.add_live_messages(user.id, [msg.message_id])
 
 
 async def check_ads_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
