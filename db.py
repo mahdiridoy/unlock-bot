@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import time
 import re
@@ -39,6 +40,10 @@ def init_db():
             updated_at INTEGER
         )
     """)
+    try:
+        conn.execute("ALTER TABLE apk_storage ADD COLUMN source_channel_id INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_apk_versions (
             user_id INTEGER NOT NULL,
@@ -46,6 +51,13 @@ def init_db():
             version TEXT NOT NULL,
             updated_at INTEGER,
             PRIMARY KEY (user_id, app_type)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS live_messages (
+            user_id INTEGER PRIMARY KEY,
+            ids TEXT NOT NULL DEFAULT '[]',
+            updated_at INTEGER
         )
     """)
     conn.commit()
@@ -130,22 +142,22 @@ def is_newer_version(new_ver: str, current_ver: str) -> bool:
         return False
 
 
-def save_apk_info(app_type: str, message_id: int, file_name: str, version: str, file_size: int = None):
+def save_apk_info(app_type: str, message_id: int, file_name: str, version: str, file_size: int = None, source_channel_id: int = None):
     """Save or update APK info if version is newer"""
     conn = get_conn()
     now = int(time.time())
-    
+
     # Check current version
     row = conn.execute(
         "SELECT version FROM apk_storage WHERE app_type = ?", (app_type,)
     ).fetchone()
-    
+
     if row is None or is_newer_version(version, row["version"]):
         conn.execute("""
-            INSERT OR REPLACE INTO apk_storage 
-            (app_type, message_id, file_name, version, file_size, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (app_type, message_id, file_name, version, file_size, now))
+            INSERT OR REPLACE INTO apk_storage
+            (app_type, message_id, file_name, version, file_size, source_channel_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (app_type, message_id, file_name, version, file_size, source_channel_id, now))
         conn.commit()
         conn.close()
         return True  # Updated
@@ -207,17 +219,60 @@ def reset_user_progress(user_id: int):
     conn.close()
 
 
-def reset_expired_unlocks(hours: int = 1) -> int:
-    """Auto-reset users whose 1-hour unlock has lapsed. Returns how many were reset."""
+def reset_expired_unlocks(hours: int = 1) -> list[int]:
+    """Auto-reset users whose 1-hour unlock has lapsed. Returns the reset user_ids."""
     conn = get_conn()
     now = int(time.time())
-    cur = conn.execute("""
-        UPDATE users SET step2_claimed = 0, ads_watched = 0, step2_claimed_at = 0, updated_at = ?
-        WHERE step2_claimed = 1 AND (step2_claimed_at = 0 OR (? - step2_claimed_at) > ?)
-    """, (now, now, hours * 3600))
-    conn.commit()
-    n = cur.rowcount
+    rows = conn.execute(
+        "SELECT user_id FROM users "
+        "WHERE step2_claimed = 1 AND (step2_claimed_at = 0 OR (? - step2_claimed_at) > ?)",
+        (now, hours * 3600),
+    ).fetchall()
+    ids = [r["user_id"] for r in rows]
+    if ids:
+        conn.execute(f"""
+            UPDATE users SET step2_claimed = 0, ads_watched = 0, step2_claimed_at = 0, updated_at = ?
+            WHERE user_id IN ({','.join('?' * len(ids))})
+        """, (now, *ids))
+        conn.commit()
     conn.close()
-    return n
+    return ids
+
+
+# ─────────────────────── Live flow messages (for deletion on reset) ─────
+
+def add_live_messages(user_id: int, message_ids):
+    """Remember message ids of the unlock-flow messages sent to this user,
+    so they can be deleted when the flow is reset/expired."""
+    conn = get_conn()
+    row = conn.execute("SELECT ids FROM live_messages WHERE user_id = ?", (user_id,)).fetchone()
+    try:
+        ids = json.loads(row["ids"]) if row else []
+    except json.JSONDecodeError:
+        ids = []
+    ids = (ids + list(message_ids))[-30:]  # keep last 30
+    conn.execute("""
+        INSERT OR REPLACE INTO live_messages (user_id, ids, updated_at)
+        VALUES (?, ?, ?)
+    """, (user_id, json.dumps(ids), int(time.time())))
+    conn.commit()
+    conn.close()
+
+
+def pop_live_messages(user_id: int) -> list[int]:
+    """Return and clear the tracked message ids for user_id."""
+    conn = get_conn()
+    row = conn.execute("SELECT ids FROM live_messages WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return []
+    try:
+        ids = json.loads(row["ids"])
+    except json.JSONDecodeError:
+        ids = []
+    conn.execute("DELETE FROM live_messages WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return ids
 
 

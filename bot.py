@@ -61,9 +61,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Step 2:* Follow our Facebook, YouTube & Telegram\n\n"
         f"Let's start with Step 1 👇"
     )
-    await update.message.reply_text(
+    msg = await update.message.reply_text(
         text, parse_mode=ParseMode.MARKDOWN, reply_markup=step1_keyboard(0)
     )
+    # track the /start flow message so it can be deleted on reset/expiry
+    db.add_live_messages(user_id, [msg.message_id])
 
 
 async def check_ads_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,12 +106,13 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     "Now finish *Step 2* — follow us everywhere below, then tap Unlock."
                 )
                 # Send to user's private chat (not reply to web_app_data message)
-                await context.bot.send_message(
+                msg = await context.bot.send_message(
                     chat_id=user_id,
                     text=text,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=step2_keyboard()
                 )
+                db.add_live_messages(user_id, [msg.message_id])
     except Exception as e:
         logger.warning(f"web_app_data parse failed: {e}")
 
@@ -147,12 +150,15 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         await query.edit_message_text(f"📤 Sending {apk_info['file_name']} (v{apk_info['version']})...")
         
-        await context.bot.copy_message(
+        sent_apk = await context.bot.copy_message(
             chat_id=user_id,
-            from_chat_id=config.APK_STORAGE_CHANNEL_ID,
+            from_chat_id=apk_info.get("source_channel_id") or config.APK_STORAGE_CHANNEL_ID,
             message_id=apk_info["message_id"],
             caption=f"📱 {apk_info['file_name']}\nVersion: v{apk_info['version']}"
         )
+        # track the APK document message so it disappears on reset/expiry
+        if getattr(sent_apk, "message_id", None):
+            db.add_live_messages(user_id, [sent_apk.message_id])
         
         # Track user's version
         db.set_user_apk_version(user_id, app_type, apk_info["version"])
@@ -264,10 +270,10 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.warning(f"📥 Ignoring - channel mismatch: got chat_id={msg.chat_id} username=@{getattr(msg.chat, 'username', None)}, expected APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID} or APK_STORAGE_CHANNEL_USERNAME=@{getattr(config, 'APK_STORAGE_CHANNEL_USERNAME', None)}")
         return
 
-    await _handle_new_apk(context, msg.document, msg.message_id)
+    await _handle_new_apk(context, msg.document, msg.message_id, msg.chat_id)
 
 
-async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_message_id: int):
+async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_message_id: int, source_chat_id: int = None):
     """Save a newer APK + notify/reset users. Shared by the channel_post
     handler and the DM-forward fallback (for when channel posts never arrive).
     Returns True if the APK was stored (newer), False otherwise."""
@@ -296,7 +302,8 @@ async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_messa
         message_id=channel_message_id,
         file_name=file_name,
         version=version,
-        file_size=file_size
+        file_size=file_size,
+        source_channel_id=source_chat_id,
     )
 
     if updated:
@@ -309,6 +316,8 @@ async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_messa
         for user_id in targets:
             try:
                 db.reset_user_progress(user_id)
+                # delete the stale flow messages (APK doc, sent-success, step screens)
+                await _delete_user_messages(context.bot, user_id)
                 app_name = "TV App" if app_type == "tv" else "Mobile App"
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -368,7 +377,7 @@ async def apk_forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     logger.info(f"📥 APK forward received: channel_msg_id={origin_msg_id}, file={msg.document.file_name}")
-    stored = await _handle_new_apk(context, msg.document, origin_msg_id)
+    stored = await _handle_new_apk(context, msg.document, origin_msg_id, origin_chat_id)
     if stored:
         await msg.reply_text("✅ APK registered and users notified. Check /apk_status to confirm.")
     else:
@@ -544,14 +553,28 @@ def _latest_apk(repo: str):
     return None, None, tag
 
 
-async def _auto_reset_expired_loop():
-    """Background task: every 5 minutes, reset unlocks older than 1 hour."""
+async def _delete_user_messages(bot, user_id: int):
+    """Delete the tracked unlock-flow messages of a user (stale buttons/APKs
+    must not survive a reset). Best-effort: old or already-deleted ids are ignored."""
+    ids = db.pop_live_messages(user_id)
+    for mid in ids:
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=mid)
+        except Exception as e:
+            logger.info(f"delete_message {mid} for user {user_id} failed (already gone?): {e}")
+
+
+async def _auto_reset_expired_loop(application):
+    """Background task: every 5 minutes, reset unlocks older than 1 hour
+    and delete the flow messages they left behind."""
     while True:
         await asyncio.sleep(300)
         try:
-            n = db.reset_expired_unlocks(1)
-            if n:
-                logger.info(f"⏰ Auto-reset {n} expired unlock(s)")
+            ids = db.reset_expired_unlocks(1)
+            for uid in ids:
+                await _delete_user_messages(application.bot, uid)
+            if ids:
+                logger.info(f"⏰ Auto-reset {len(ids)} expired unlock(s)")
         except Exception:
             logger.exception("Auto-reset of expired unlocks failed")
 
@@ -562,7 +585,7 @@ _reset_task = None
 async def _post_init(application):
     global _reset_task
     # Plain asyncio task: PTB's create_task here warns that it won't be awaited
-    _reset_task = asyncio.create_task(_auto_reset_expired_loop(), name="auto-reset-expired")
+    _reset_task = asyncio.create_task(_auto_reset_expired_loop(application), name="auto-reset-expired")
 
 
 async def _post_shutdown(application):
