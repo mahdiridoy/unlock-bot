@@ -227,12 +227,12 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-def _storage_channel_matches(msg) -> bool:
-    """True if msg came from the configured APK storage channel.
+def _storage_channel_matches(chat_id, username) -> bool:
+    """True if chat_id/username belong to the configured APK storage channel.
     Matches by numeric id (any prefix style) OR by channel username, so a
     missing/placeholder APK_STORAGE_CHANNEL_ID on the host doesn't silently
     drop every upload."""
-    digits_recv = re.sub(r"\D", "", str(msg.chat_id))
+    digits_recv = re.sub(r"\D", "", str(chat_id))
     configured = str(config.APK_STORAGE_CHANNEL_ID).strip()
     if re.fullmatch(r"-?\d+", configured):  # ignore placeholder like -100xxxxxxxxxx
         digits_conf = re.sub(r"\D", "", configured)
@@ -242,7 +242,7 @@ def _storage_channel_matches(msg) -> bool:
             or digits_conf.endswith(digits_recv)
         ):
             return True
-    username = getattr(msg.chat, "username", None) or ""
+    username = username or ""
     expected_user = str(getattr(config, "APK_STORAGE_CHANNEL_USERNAME", "")).lstrip("@").lower()
     return bool(expected_user) and username.lower() == expected_user
 
@@ -255,14 +255,20 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     logger.info(f"📥 Channel post received: chat_id={msg.chat_id}, username=@{getattr(msg.chat, 'username', None)}, file={msg.document.file_name}")
 
-    if not _storage_channel_matches(msg):
+    if not _storage_channel_matches(msg.chat_id, getattr(msg.chat, "username", None)):
         logger.warning(f"📥 Ignoring - channel mismatch: got chat_id={msg.chat_id} username=@{getattr(msg.chat, 'username', None)}, expected APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID} or APK_STORAGE_CHANNEL_USERNAME=@{getattr(config, 'APK_STORAGE_CHANNEL_USERNAME', None)}")
         return
-    
-    doc = msg.document
+
+    await _handle_new_apk(context, msg.document, msg.message_id)
+
+
+async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_message_id: int):
+    """Save a newer APK + notify/reset users. Shared by the channel_post
+    handler and the DM-forward fallback (for when channel posts never arrive).
+    Returns True if the APK was stored (newer), False otherwise."""
     file_name = doc.file_name or ""
     file_size = doc.file_size
-    
+
     # Determine app type from filename
     app_type = None
     if config.APK_PATTERN_TV in file_name:
@@ -271,25 +277,25 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         app_type = "mobile"
     else:
         logger.info(f"📥 Not our APK pattern: {file_name} (looking for {config.APK_PATTERN_TV} or {config.APK_PATTERN_MOBILE})")
-        return  # Not our APK
-    
+        return False
+
     # Extract version
     version = db.parse_version(file_name)
     if not version:
         logger.warning(f"Could not parse version from {file_name}")
-        return
-    
+        return False
+
     # Save if newer
     updated = db.save_apk_info(
         app_type=app_type,
-        message_id=msg.message_id,
+        message_id=channel_message_id,
         file_name=file_name,
         version=version,
         file_size=file_size
     )
-    
+
     if updated:
-        logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={msg.message_id})")
+        logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={channel_message_id})")
         
         # Notify users on the old version AND currently-unlocked users, and
         # reset everyone so the new APK requires a fresh unlock.
@@ -315,6 +321,47 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.warning(f"Failed to notify user {user_id}: {e}")
     else:
         logger.info(f"ℹ️ Skipped {app_type} APK {file_name} v{version} (not newer)")
+    return updated
+
+
+async def apk_forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fallback when channel_post updates never reach the bot: forward the
+    APK message from the storage channel to the bot in DM. Telegram sets
+    forward_origin, which can't be forged, so this is as trustworthy as the
+    channel auto-detect. copyMessage needs the channel message_id, which the
+    forward origin carries."""
+    msg = update.message
+    if not msg or not msg.document:
+        return
+
+    origin = getattr(msg, "forward_origin", None)
+    origin_chat_id = None
+    origin_msg_id = getattr(msg, "forward_from_message_id", None)
+    origin_username = None
+    origin_chat = getattr(origin, "chat", None) if origin is not None else None
+    if origin_chat is not None:
+        origin_chat_id = origin_chat.id
+        origin_username = getattr(origin_chat, "username", None)
+        origin_msg_id = getattr(origin, "message_id", None) or origin_msg_id
+    elif getattr(msg, "forward_from_chat", None) is not None:  # legacy field
+        origin_chat_id = msg.forward_from_chat.id
+        origin_username = getattr(msg.forward_from_chat, "username", None)
+
+    if origin_chat_id is None:
+        return  # not forwarded from a channel
+    if not _storage_channel_matches(origin_chat_id, origin_username):
+        logger.info(f"📥 Forward ignored: origin chat={origin_chat_id} @{origin_username} is not the storage channel")
+        return
+    if not origin_msg_id:
+        logger.warning("📥 Forward missing channel message_id; APK not stored")
+        return
+
+    logger.info(f"📥 APK forward received: channel_msg_id={origin_msg_id}, file={msg.document.file_name}")
+    stored = await _handle_new_apk(context, msg.document, origin_msg_id)
+    if stored:
+        await msg.reply_text("✅ APK registered and users notified. Check /apk_status to confirm.")
+    else:
+        await msg.reply_text("ℹ️ APK not stored (unrecognized filename/version, or not newer). Check the filename matches MahSuratStreamTV_V*.apk / MahSuratStream_V*.apk and try again. /apk_status shows current state.")
 
 
 async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -498,15 +545,27 @@ async def _auto_reset_expired_loop():
             logger.exception("Auto-reset of expired unlocks failed")
 
 
+_reset_task = None
+
+
 async def _post_init(application):
-    application.create_task(_auto_reset_expired_loop(), name="auto-reset-expired")
+    global _reset_task
+    # Plain asyncio task: PTB's create_task here warns that it won't be awaited
+    _reset_task = asyncio.create_task(_auto_reset_expired_loop(), name="auto-reset-expired")
+
+
+async def _post_shutdown(application):
+    global _reset_task
+    if _reset_task:
+        _reset_task.cancel()
+        _reset_task = None
 
 
 def build_application():
     """Builds and returns the PTB Application with all handlers registered,
     without starting polling. Used both by main() below (standalone run)
     and by app.py (combined bot + web server, for free-tier hosting)."""
-    application = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
+    application = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).post_shutdown(_post_shutdown).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
@@ -521,6 +580,8 @@ def build_application():
     # Channel post handler for auto-detecting APK uploads to @MahSuratAPKStorage
     # Use ChatType.CHANNEL + Document filter to catch all channel posts with files (PTB v21+)
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL & filters.Document.ALL, channel_post_handler))
+    # Fallback: admin forwards the APK message from the storage channel to the bot in DM
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.ALL, apk_forward_handler))
     # Debug: log ALL updates
     application.add_handler(MessageHandler(filters.ALL, debug_all_updates), group=-1)
     application.add_error_handler(error_handler)

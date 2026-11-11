@@ -41,6 +41,7 @@ Required so the bot can verify real membership.
    - `ADS_WEBAPP_URL` = your GitHub Pages URL from Part A
    - `POSTBACK_SECRET` = make up any random string
    - `APK_STORAGE_CHANNEL_ID` = numeric ID of @MahSuratAPKStorage (from @RawDataBot). If unset, the bot matches the channel by username `MahSuratAPKStorage` instead — set `APK_STORAGE_CHANNEL_USERNAME` to override
+   - **If channel auto-detect never fires** (bot must be ADMIN of the storage channel itself, not just the join channel): forward any APK message from the storage channel to the bot in DM. The bot registers it exactly the same way and confirms in the chat. Use `/apk_status` to verify.
    - `DB_PATH` = (Render free tier: SQLite file is ephemeral and wiped on redeploy/restart — use a persistent disk or external DB if you need data to survive)
 6. Deploy. Render gives you a URL like `https://unlock-bot-xxxx.onrender.com`.
 
