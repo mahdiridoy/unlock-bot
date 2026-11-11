@@ -1,10 +1,13 @@
 import os
 
 # ── Telegram bot token (from BotFather) ─────────────────────────────
-# NOTE: since this token was pasted in a chat, it's effectively exposed.
-# Recommended: revoke it via BotFather (/revoke) and generate a new one,
-# then set it as an environment variable instead of hardcoding it here.
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8678859276:AAHojaYn_1oLAYut8fj0zwaEuZ3uS3ZgZtI")
+# Read ONLY from the BOT_TOKEN environment variable / secret.
+# No hardcoded fallback, so the token never lives in the source code.
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN is not set. Add it as a secret / environment variable named BOT_TOKEN."
+    )
 
 # ── Channel the user must join (bot must be ADMIN here) ─────────────
 # Use the numeric chat id (starts with -100...) if possible — more reliable
@@ -32,6 +35,7 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "https://unlock-bot-xieo.onrender.co
 
 # ── Telegram Movie Bot link ──────────────────────────────────────────
 TELEGRAM_MOVIE_BOT_LINK = "https://t.me/mahsuratstreamtg_bot"
+
 # ── Database file ────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 
