@@ -40,6 +40,8 @@ Required so the bot can verify real membership.
    - `TELEGRAM_CHANNEL_ID` = the numeric ID from Part B
    - `ADS_WEBAPP_URL` = your GitHub Pages URL from Part A
    - `POSTBACK_SECRET` = make up any random string
+   - `APK_STORAGE_CHANNEL_ID` = numeric ID of @MahSuratAPKStorage (from @RawDataBot). If unset, the bot matches the channel by username `MahSuratAPKStorage` instead — set `APK_STORAGE_CHANNEL_USERNAME` to override
+   - `DB_PATH` = (Render free tier: SQLite file is ephemeral and wiped on redeploy/restart — use a persistent disk or external DB if you need data to survive)
 6. Deploy. Render gives you a URL like `https://unlock-bot-xxxx.onrender.com`.
 
 ---
@@ -73,6 +75,8 @@ Render's free tier sleeps after 15 minutes with no HTTP traffic — which would 
 4. At 5/5 → bot shows Step 2 (Facebook, YouTube, Telegram buttons + Unlock).
 5. Telegram join is verified for real via `getChatMember`. Facebook/YouTube stay honor-system — no public API can verify these.
 6. On success → bot sends your `FINAL_UNLOCK_LINK`.
+
+**Auto-reset:** a background task resets expired unlocks every 5 minutes (both `step2_claimed` and `ads_watched`), and the bot re-checks expiry on every button tap. When a new APK is uploaded to the storage channel, the bot notifies everyone on an older version **and** everyone currently unlocked, and resets their progress so a fresh unlock is required.
 
 ---
 

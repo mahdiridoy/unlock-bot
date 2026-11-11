@@ -113,7 +113,10 @@ def run_bot():
             logger.info("Bot starting (polling mode, background thread)...")
             # stop_signals=None: signal handlers only work in the main thread,
             # and this runs in a background thread, so we disable them here.
-            application.run_polling(stop_signals=None)
+            application.run_polling(
+        stop_signals=None,
+        allowed_updates=["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
+    )
         except Exception:
             # Without this, an unhandled exception here kills the thread
             # silently — /health keeps returning "healthy" forever while

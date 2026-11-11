@@ -81,16 +81,6 @@ def increment_ads_watched(user_id: int) -> int:
     return row["ads_watched"] if row else 0
 
 
-def set_ads_watched(user_id: int, count: int):
-    conn = get_conn()
-    conn.execute(
-        "UPDATE users SET ads_watched = ?, updated_at = ? WHERE user_id = ?",
-        (count, int(time.time()), user_id),
-    )
-    conn.commit()
-    conn.close()
-
-
 def mark_step2_claimed(user_id: int):
     conn = get_conn()
     now = int(time.time())
@@ -209,11 +199,33 @@ def get_users_with_old_version(app_type: str, current_version: str) -> list[int]
     return [r["user_id"] for r in rows]
 
 
-def reset_user_step2(user_id: int):
-    """Reset step2_claimed so user must do task again"""
+def reset_user_progress(user_id: int):
+    """Reset step2_claimed AND ads_watched so the user must redo both steps."""
     conn = get_conn()
     conn.execute("""
-        UPDATE users SET step2_claimed = 0, updated_at = ? WHERE user_id = ?
+        UPDATE users SET step2_claimed = 0, ads_watched = 0, step2_claimed_at = 0, updated_at = ? WHERE user_id = ?
     """, (int(time.time()), user_id))
     conn.commit()
     conn.close()
+
+
+def reset_expired_unlocks(hours: int = 1) -> int:
+    """Auto-reset users whose 1-hour unlock has lapsed. Returns how many were reset."""
+    conn = get_conn()
+    now = int(time.time())
+    cur = conn.execute("""
+        UPDATE users SET step2_claimed = 0, ads_watched = 0, step2_claimed_at = 0, updated_at = ?
+        WHERE step2_claimed = 1 AND (step2_claimed_at = 0 OR (? - step2_claimed_at) > ?)
+    """, (now, now, hours * 3600))
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return n
+
+
+def get_unlocked_user_ids() -> list[int]:
+    """Users currently in their 1-hour unlock window (never downloaded or not)."""
+    conn = get_conn()
+    rows = conn.execute("SELECT user_id FROM users WHERE step2_claimed = 1").fetchall()
+    conn.close()
+    return [r["user_id"] for r in rows]

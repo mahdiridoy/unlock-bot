@@ -43,8 +43,10 @@ DB_PATH = os.environ.get("DB_PATH", "bot_data.db")
 POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "change-this-secret")
 
 # ── APK Storage Channel (bot must be ADMIN here) ─────────────────────
-# Forward a message from @MahSuratAPKStorage to @RawDataBot to get numeric ID
+# Forward a message from @MahSuratAPKStorage to @RawDataBot to get numeric ID.
+# If unset/placeholder, uploads are matched by channel username instead.
 APK_STORAGE_CHANNEL_ID = os.environ.get("APK_STORAGE_CHANNEL_ID", "-100xxxxxxxxxx")
+APK_STORAGE_CHANNEL_USERNAME = os.environ.get("APK_STORAGE_CHANNEL_USERNAME", "MahSuratAPKStorage")
 
 # APK filename patterns for auto-detection
 APK_PATTERN_TV = "MahSuratStreamTV"

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import urllib.request
 import asyncio
 
@@ -131,8 +132,7 @@ async def download_apk_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=step1_keyboard(0)
         )
         # Reset for fresh start
-        db.reset_user_step2(user_id)
-        db.set_ads_watched(user_id, 0)
+        db.reset_user_progress(user_id)
         return
     
     apk_info = db.get_apk_info(app_type)
@@ -192,8 +192,7 @@ async def back_to_apps_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "Please complete the steps again to get the latest APK.",
             reply_markup=step1_keyboard(0)
         )
-        db.reset_user_step2(user_id)
-        db.set_ads_watched(user_id, 0)
+        db.reset_user_progress(user_id)
         return
     
     buttons = [
@@ -219,8 +218,7 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     # Reset user progress
-    db.reset_user_step2(user_id)
-    db.set_ads_watched(user_id, 0)
+    db.reset_user_progress(user_id)
     
     await query.edit_message_text(
         "🔄 Starting over...\n\n"
@@ -229,27 +227,36 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+def _storage_channel_matches(msg) -> bool:
+    """True if msg came from the configured APK storage channel.
+    Matches by numeric id (any prefix style) OR by channel username, so a
+    missing/placeholder APK_STORAGE_CHANNEL_ID on the host doesn't silently
+    drop every upload."""
+    digits_recv = re.sub(r"\D", "", str(msg.chat_id))
+    configured = str(config.APK_STORAGE_CHANNEL_ID).strip()
+    if re.fullmatch(r"-?\d+", configured):  # ignore placeholder like -100xxxxxxxxxx
+        digits_conf = re.sub(r"\D", "", configured)
+        if len(digits_conf) >= 9 and (
+            digits_recv == digits_conf
+            or digits_recv.endswith(digits_conf)
+            or digits_conf.endswith(digits_recv)
+        ):
+            return True
+    username = getattr(msg.chat, "username", None) or ""
+    expected_user = str(getattr(config, "APK_STORAGE_CHANNEL_USERNAME", "")).lstrip("@").lower()
+    return bool(expected_user) and username.lower() == expected_user
+
+
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Auto-detect APK uploads to @MahSuratAPKStorage and save latest version."""
     msg = update.channel_post or update.edited_channel_post
     if not msg or not msg.document:
         return
-    
-    # Debug: log all channel posts
-    logger.info(f"📥 Channel post received: chat_id={msg.chat_id}, file={msg.document.file_name}")
-    logger.info(f"📥 Configured APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID}")
-    
-    # Only process messages from the configured storage channel
-    # Compare both with and without -100 prefix - handle both int and str
-    try:
-        configured_id = int(str(config.APK_STORAGE_CHANNEL_ID).replace("-100", ""))
-        received_id = int(str(msg.chat_id).replace("-100", ""))
-    except ValueError:
-        configured_id = str(config.APK_STORAGE_CHANNEL_ID)
-        received_id = str(msg.chat_id)
-    
-    if received_id != configured_id:
-        logger.warning(f"📥 Ignoring - channel mismatch: got {msg.chat_id}, expected {config.APK_STORAGE_CHANNEL_ID}")
+
+    logger.info(f"📥 Channel post received: chat_id={msg.chat_id}, username=@{getattr(msg.chat, 'username', None)}, file={msg.document.file_name}")
+
+    if not _storage_channel_matches(msg):
+        logger.warning(f"📥 Ignoring - channel mismatch: got chat_id={msg.chat_id} username=@{getattr(msg.chat, 'username', None)}, expected APK_STORAGE_CHANNEL_ID={config.APK_STORAGE_CHANNEL_ID} or APK_STORAGE_CHANNEL_USERNAME=@{getattr(config, 'APK_STORAGE_CHANNEL_USERNAME', None)}")
         return
     
     doc = msg.document
@@ -284,11 +291,12 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if updated:
         logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={msg.message_id})")
         
-        # Notify users who have older version and reset their step2
-        old_users = db.get_users_with_old_version(app_type, version)
-        for user_id in old_users:
+        # Notify users on the old version AND currently-unlocked users, and
+        # reset everyone so the new APK requires a fresh unlock.
+        targets = set(db.get_users_with_old_version(app_type, version)) | set(db.get_unlocked_user_ids())
+        for user_id in targets:
             try:
-                db.reset_user_step2(user_id)
+                db.reset_user_progress(user_id)
                 app_name = "TV App" if app_type == "tv" else "Mobile App"
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -326,10 +334,7 @@ async def verify_step2_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Check if previous unlock expired (1 hour)
     if user_row["step2_claimed"] and db.is_unlock_expired(user_id):
-        db.reset_user_step2(user_id)
-        user_row["step2_claimed"] = 0
-        user_row["ads_watched"] = 0
-        db.set_ads_watched(user_id, 0)
+        db.reset_user_progress(user_id)
         logger.info(f"🔓 verify_step2: unlock expired for user={user_id}, reset progress")
 
     # Real, verifiable check: is the user actually a member of the Telegram channel?
@@ -481,11 +486,27 @@ def _latest_apk(repo: str):
     return None, None, tag
 
 
+async def _auto_reset_expired_loop():
+    """Background task: every 5 minutes, reset unlocks older than 1 hour."""
+    while True:
+        await asyncio.sleep(300)
+        try:
+            n = db.reset_expired_unlocks(1)
+            if n:
+                logger.info(f"⏰ Auto-reset {n} expired unlock(s)")
+        except Exception:
+            logger.exception("Auto-reset of expired unlocks failed")
+
+
+async def _post_init(application):
+    application.create_task(_auto_reset_expired_loop(), name="auto-reset-expired")
+
+
 def build_application():
     """Builds and returns the PTB Application with all handlers registered,
     without starting polling. Used both by main() below (standalone run)
     and by app.py (combined bot + web server, for free-tier hosting)."""
-    application = Application.builder().token(config.BOT_TOKEN).build()
+    application = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
@@ -512,7 +533,9 @@ def main():
     db.init_db()
     application = build_application()
     logger.info("Bot starting (standalone polling mode)...")
-    application.run_polling()
+    application.run_polling(
+        allowed_updates=["message", "edited_message", "channel_post", "edited_channel_post", "callback_query"],
+    )
 
 
 if __name__ == "__main__":
