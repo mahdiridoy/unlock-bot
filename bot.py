@@ -354,7 +354,12 @@ async def apk_forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if origin_chat_id is None:
         return  # not forwarded from a channel
     if not _storage_channel_matches(origin_chat_id, origin_username):
-        logger.info(f"📥 Forward ignored: origin chat={origin_chat_id} @{origin_username} is not the storage channel")
+        logger.info(f"📥 Forward from unconfigured channel chat={origin_chat_id} @{origin_username}")
+        await msg.reply_text(
+            f"ℹ️ This channel isn't your APK storage channel (id `{origin_chat_id}`).\n\n"
+            f"To use it for APK auto-detect: set `APK_STORAGE_CHANNEL_ID={origin_chat_id}` "
+            f"on Render and redeploy — then uploads work automatically."
+        )
         return
     if not origin_msg_id:
         logger.warning("📥 Forward missing channel message_id; APK not stored")
