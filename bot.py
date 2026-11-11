@@ -237,8 +237,8 @@ def _storage_channel_matches(chat_id, username) -> bool:
     # admin of both; the placeholder storage id matched nothing and silently
     # dropped every upload.
     for cand in (config.APK_STORAGE_CHANNEL_ID, getattr(config, "TELEGRAM_CHANNEL_ID", "")):
-        # tolerate surrounding/inner whitespace from copy-paste into Render env vars
-        configured = re.sub(r"\s", "", str(cand)).strip()
+        # tolerate whitespace/quotes from copy-paste into Render env vars
+        configured = re.sub(r"\s", "", str(cand)).strip().strip('"').strip("'")
         if re.fullmatch(r"-?\d+", configured):  # ignore placeholder like -100xxxxxxxxxx
             digits_conf = re.sub(r"\D", "", configured)
             if len(digits_conf) >= 9 and (
