@@ -188,13 +188,11 @@ def set_user_apk_version(user_id: int, app_type: str, version: str):
     conn.close()
 
 
-def get_users_with_old_version(app_type: str, current_version: str) -> list[int]:
-    """Get user_ids who have older version than current_version"""
+def get_all_user_ids() -> list[int]:
+    """Every user the bot knows (anyone who ran /start). Used for APK update
+    broadcasts — per-deploy DB wipes make version/claim records unreliable."""
     conn = get_conn()
-    rows = conn.execute("""
-        SELECT user_id FROM user_apk_versions 
-        WHERE app_type = ? AND version != ?
-    """, (app_type, current_version)).fetchall()
+    rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r["user_id"] for r in rows]
 
@@ -223,9 +221,3 @@ def reset_expired_unlocks(hours: int = 1) -> int:
     return n
 
 
-def get_unlocked_user_ids() -> list[int]:
-    """Users currently in their 1-hour unlock window (never downloaded or not)."""
-    conn = get_conn()
-    rows = conn.execute("SELECT user_id FROM users WHERE step2_claimed = 1").fetchall()
-    conn.close()
-    return [r["user_id"] for r in rows]

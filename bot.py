@@ -302,9 +302,10 @@ async def _handle_new_apk(context: ContextTypes.DEFAULT_TYPE, doc, channel_messa
     if updated:
         logger.info(f"✅ Updated {app_type} APK: {file_name} v{version} (msg_id={channel_message_id})")
         
-        # Notify users on the old version AND currently-unlocked users, and
-        # reset everyone so the new APK requires a fresh unlock.
-        targets = set(db.get_users_with_old_version(app_type, version)) | set(db.get_unlocked_user_ids())
+        # Notify ALL known users (per-deploy DB wipes empty the version/claim
+        # tables, so targeted-only notify would silently reach nobody), and
+        # reset them so the new APK requires a fresh unlock.
+        targets = set(db.get_all_user_ids())
         for user_id in targets:
             try:
                 db.reset_user_progress(user_id)
