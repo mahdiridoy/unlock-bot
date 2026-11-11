@@ -15,7 +15,7 @@ TELEGRAM_CHANNEL_INVITE_LINK = "https://t.me/+iy-lf73ooaA0YTk1"
 # ── Social links (honor-system, not programmatically verifiable) ───
 FACEBOOK_LINK_1 = "https://www.facebook.com/share/1GFY5GMTF8/"
 FACEBOOK_LINK_2 = "https://www.facebook.com/share/1ESSAeXnvQ/"
-YOUTUBE_LINK = "https://youtube.com/@nm-djridoy?si=XrYD0EJz1o3aKa7b"
+YOUTUBE_LINK = "https://youtube.com/@MahSuratTube?si=XrYD0EJz1o3aKa7b"
 
 # ── How many ads must be watched before unlocking step 2 ────────────
 ADS_REQUIRED = 2
@@ -29,13 +29,6 @@ ADS_WEBAPP_URL = os.environ.get("ADS_WEBAPP_URL", "https://PUT_YOUR_HOSTED_ADS_H
 
 # ── Backend URL (Render) for ad postback — used by ads.html ──────────
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://unlock-bot-xieo.onrender.com")
-
-# ── The final reward link unlocked after both steps ──────────────────
-FINAL_UNLOCK_LINK = "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u"
-SPECIAL_M3U_NAME = "Special M3U Link by Ridoy"
-SPECIAL_M3U_URL = os.environ.get("SPECIAL_M3U_URL", "https://mahdiridoy.github.io/Tv/ridoyiptv.m3u")
-SPECIAL_APP_URL_TV = "https://github.com/mahdiridoy/MahSuratStreamTV/releases/latest"
-SPECIAL_APP_URL_STREAM = "https://github.com/mahdiridoy/MahSuratStream/releases/latest"
 
 # ── Telegram Movie Bot link ──────────────────────────────────────────
 TELEGRAM_MOVIE_BOT_LINK = "https://t.me/mahsuratstreamtg_bot"
