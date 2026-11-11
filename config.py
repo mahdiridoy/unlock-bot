@@ -46,6 +46,7 @@ POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "change-this-secret")
 # Forward a message from @MahSuratAPKStorage to @RawDataBot to get numeric ID.
 # If unset/placeholder, uploads are matched by channel username instead.
 APK_STORAGE_CHANNEL_ID = os.environ.get("APK_STORAGE_CHANNEL_ID", "-100xxxxxxxxxx")
+# Uploads are also accepted from TELEGRAM_CHANNEL_ID if they don't match the storage channel.
 APK_STORAGE_CHANNEL_USERNAME = os.environ.get("APK_STORAGE_CHANNEL_USERNAME", "MahSuratAPKStorage")
 
 # APK filename patterns for auto-detection

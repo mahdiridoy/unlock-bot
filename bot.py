@@ -233,15 +233,19 @@ def _storage_channel_matches(chat_id, username) -> bool:
     missing/placeholder APK_STORAGE_CHANNEL_ID on the host doesn't silently
     drop every upload."""
     digits_recv = re.sub(r"\D", "", str(chat_id))
-    configured = str(config.APK_STORAGE_CHANNEL_ID).strip()
-    if re.fullmatch(r"-?\d+", configured):  # ignore placeholder like -100xxxxxxxxxx
-        digits_conf = re.sub(r"\D", "", configured)
-        if len(digits_conf) >= 9 and (
-            digits_recv == digits_conf
-            or digits_recv.endswith(digits_conf)
-            or digits_conf.endswith(digits_recv)
-        ):
-            return True
+    # Accept the storage channel OR the join channel (APK Pulse) — the bot is
+    # admin of both; the placeholder storage id matched nothing and silently
+    # dropped every upload.
+    for cand in (config.APK_STORAGE_CHANNEL_ID, getattr(config, "TELEGRAM_CHANNEL_ID", "")):
+        configured = str(cand).strip()
+        if re.fullmatch(r"-?\d+", configured):  # ignore placeholder like -100xxxxxxxxxx
+            digits_conf = re.sub(r"\D", "", configured)
+            if len(digits_conf) >= 9 and (
+                digits_recv == digits_conf
+                or digits_recv.endswith(digits_conf)
+                or digits_conf.endswith(digits_recv)
+            ):
+                return True
     username = username or ""
     expected_user = str(getattr(config, "APK_STORAGE_CHANNEL_USERNAME", "")).lstrip("@").lower()
     return bool(expected_user) and username.lower() == expected_user
